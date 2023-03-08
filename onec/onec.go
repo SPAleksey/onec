@@ -8,9 +8,17 @@ import (
 	"log"
 	"math"
 	"os"
+	"regexp"
+	"strconv"
+	"strings"
 )
 
 var Ver8380 = [4]byte{8, 3, 8, 0}
+
+var (
+	TableDescriptionPattern = regexp.MustCompile(`\{"(\S+)".*\n\{"Fields",\n([\s\S]*)\n\},\n\{"Indexes"(?:,|)([\s\S]*)\},\n\{"Recordlock","(\d)+"\},\n\{"Files",(\S+)\}\n\}`)
+	FieldDescriptionPattern = regexp.MustCompile(`\{"(\w+)","(\w+)",(\d+),(\d+),(\d+),"(\w+)"\}(?:,|)`)
+)
 
 const RootObjectOffset uint64 = 2
 const BlobChunkSize uint32 = 256
@@ -26,7 +34,15 @@ type headDB struct { //8s4bIiI
 type BaseOnec struct {
 	db               *os.File
 	HeadDB           headDB
-	TableDescription []string
+	TableDescription []Table
+}
+
+type Table struct {
+	Name        string
+	RecordLock  bool
+	DataOffset  int
+	BlobOffset  int
+	IndexOffset int
 }
 
 func ReadBytes(db *os.File, position uint64, lenth uint32) []byte {
@@ -34,14 +50,11 @@ func ReadBytes(db *os.File, position uint64, lenth uint32) []byte {
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	bytes := make([]byte, lenth)
-
 	_, err = db.Read(bytes)
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	return bytes
 }
 
@@ -75,16 +88,18 @@ func readBlobStream(db *os.File, offset uint64, pageSize uint32, dataPagesOffset
 		size := binary.LittleEndian.Uint16(b[4:6])
 		data = append(data, b[6:6+size]...)
 	}
+
 	return data
 }
 
-func readBlobFirst(db *os.File, pageSize uint32, blobSize uint32, blobOffsetSlice []uint32, blobChunkOffset uint32, fieldType string) []uint32 {
+func readBlockOfReplacemant(BO *BaseOnec, blobOffsetSlice []uint32) []uint32 {
+	var blobChunkOffset uint32 = 1
+	pageSize := BO.HeadDB.PageSize
+
 	blobOffset := blobOffsetSlice[0]
-	if blobSize == 0 {
-		return make([]uint32, 0)
-	}
+	//if blobSize == 0 {return make([]uint32, 0)}
 	fmt.Println(int64(blobOffset)*int64(pageSize) + int64(blobChunkOffset*BlobChunkSize))
-	b := readBlobStream(db, uint64(blobOffset)*uint64(pageSize)+uint64(blobChunkOffset*BlobChunkSize), pageSize, blobOffsetSlice) //ReadBytes(db, int64(blobOffset)*int64(pageSize)+int64(blobChunkOffset*BlobChunkSize), BlobChunkSize)
+	b := readBlobStream(BO.db, uint64(blobOffset)*uint64(pageSize)+uint64(blobChunkOffset*BlobChunkSize), pageSize, blobOffsetSlice) //ReadBytes(db, int64(blobOffset)*int64(pageSize)+int64(blobChunkOffset*BlobChunkSize), BlobChunkSize)
 
 	lang := b[:32]
 	numblocks := binary.LittleEndian.Uint32(b[32 : 32+4])
@@ -93,24 +108,45 @@ func readBlobFirst(db *os.File, pageSize uint32, blobSize uint32, blobOffsetSlic
 
 	for n := 0; n < int(numblocks); n++ {
 		blocksOfReplacemant[n] = binary.LittleEndian.Uint32(b[36+n*4 : 36+n*4+4])
+	}
+	return blocksOfReplacemant
+}
 
+func getTableDescription(s string) Table {
+	var recordLock bool
+	//var dataOffset, blobOffset, indexOffset int
+
+	result := TableDescriptionPattern.FindStringSubmatch(s)
+
+	if len(result) == 0 {
+		fmt.Println("The format is not valid ", s)
 	}
 
-	return blocksOfReplacemant
+	if result[4] == "1" {
+		recordLock = true
+	} else {
+		recordLock = false
+	}
 
+	split := strings.Split(result[5], ",")
+	dataOffset, _ := strconv.Atoi(split[0])
+	blobOffset, _ := strconv.Atoi(split[1])
+	indexOffset, _ := strconv.Atoi(split[2])
+
+	Table := Table{
+		Name:        result[1],
+		RecordLock:  recordLock,
+		DataOffset:  dataOffset,
+		BlobOffset:  blobOffset,
+		IndexOffset: indexOffset,
+	}
+
+	return Table
 }
 
-func Table() {
-
-}
-
-// Read Root Object
-func (BO *BaseOnec) RootObject() {
-
+func readDataPagesOffsets(BO *BaseOnec) []uint32 {
 	pageSize := BO.HeadDB.PageSize
-	b := ReadBytes(BO.db, RootObjectOffset*uint64(pageSize), pageSize)
-	//sig := b[:2] //signature of object
-	//fatLevel := binary.LittleEndian.Uint16(b[2:4])
+	b := ReadBytes(BO.db, RootObjectOffset*uint64(pageSize), pageSize) //sig := b[:2] //signature of object	//fatLevel := binary.LittleEndian.Uint16(b[2:4])
 	lenth := binary.LittleEndian.Uint64(b[16 : 16+8])
 
 	dataPagesCount := int(math.Ceil(float64(lenth) / float64(pageSize)))
@@ -120,17 +156,30 @@ func (BO *BaseOnec) RootObject() {
 		dataPagesOffsets[n] = binary.LittleEndian.Uint32(b[24+n*4 : 24+n*4+4])
 	}
 
-	blocksOfReplacemant := readBlobFirst(BO.db, pageSize, uint32(lenth), dataPagesOffsets, 1, "I")
+	return dataPagesOffsets
+}
 
-	BO.TableDescription = make([]string, len(blocksOfReplacemant))
+func readTableDescriptions(BO *BaseOnec, dataPagesOffsets []uint32, blocksOfReplacemant []uint32) []Table {
+	pageSize := BO.HeadDB.PageSize
+	TableDescription := make([]Table, len(blocksOfReplacemant))
 	for n, chunkOffset := range blocksOfReplacemant {
 		offset := uint64(dataPagesOffsets[uint32(chunkOffset)*BlobChunkSize/pageSize])*uint64(pageSize) + uint64(uint32(chunkOffset)*BlobChunkSize%pageSize)
 		if chunkOffset == 0 {
 			continue
 		}
-		BO.TableDescription[n] = string(readBlobStream(BO.db, uint64(offset), pageSize, dataPagesOffsets))
-
+		TableDescription[n] = getTableDescription(string(readBlobStream(BO.db, uint64(offset), pageSize, dataPagesOffsets)))
 	}
+	return TableDescription
+}
+
+// Read Root Object
+func (BO *BaseOnec) RootObject() {
+
+	dataPagesOffsets := readDataPagesOffsets(BO)
+
+	blocksOfReplacemant := readBlockOfReplacemant(BO, dataPagesOffsets)
+
+	BO.TableDescription = readTableDescriptions(BO, dataPagesOffsets, blocksOfReplacemant)
 
 }
 
@@ -149,28 +198,4 @@ func DatabaseReader(db *os.File) *BaseOnec {
 	BaseOnec.RootObject()
 
 	return BaseOnec
-}
-
-func init() {
-	//table_description_pattern_text = '\{"(\S+)".*\n\{"Fields",\n([\s\S]*)\n\},\n\{"Indexes"(?:,|)([\s\S]*)\},' \
-	//                                 '\n\{"Recordlock","(\d)+"\},\n\{"Files",(\S+)\}\n\}'
-	//table_description_pattern = re.compile(table_description_pattern_text)
-	//field_description_pattern = re.compile('\{"(\w+)","(\w+)",(\d+),(\d+),(\d+),"(\w+)"\}(?:,|)')
-
-	//.MustCompile("welcome ([A-z]*) new ([A-z]*) city")
-
-	/*
-		{"IBVERSION",0,
-		{"Fields",
-		{"IBVERSION","N",0,10,0,"CS"},
-		{"PLATFORMVERSIONREQ","N",0,10,0,"CS"}
-		},
-		{"Indexes"},
-		{"Recordlock","0"},
-		{"Files",20,0,0}
-		}	 */
-
-	//Pattern := regexp.MustCompile("{ [A-z]*,\n\{"
-	//Fields
-
 }
