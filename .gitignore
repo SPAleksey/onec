@@ -24,4 +24,7 @@ Makefile.*
 *.rej
 *.old
 *.exe
+*/onec.test.exe
+*/mem.out
+*/cpu.out
 

@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 var Ver8380 = [4]byte{8, 3, 8, 0}
@@ -47,7 +48,11 @@ type Table struct {
 	Fields      map[string]Field
 }
 
-func ReadBytes(db *os.File, position uint64, lenth uint32) []byte {
+func ReadBytes(db *os.File, position uint64, lenth uint32, mu *sync.Mutex) []byte {
+	if mu != nil {
+		mu.Lock()
+		defer mu.Unlock()
+	}
 	_, err := db.Seek(int64(position), 0)
 	if err != nil {
 		log.Fatal(err)
@@ -57,6 +62,7 @@ func ReadBytes(db *os.File, position uint64, lenth uint32) []byte {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	return bytes
 }
 
@@ -71,7 +77,7 @@ func readHeadDB(db *os.File) (headDB, error) {
 	}
 	fmt.Println(buf) // - takes on different values on benchmark
 	*/
-	buf := ReadBytes(db, 0, 24)
+	buf := ReadBytes(db, 0, 24, nil)
 	buffer := bytes.NewBuffer(buf)
 	err := binary.Read(buffer, binary.LittleEndian, &headDB)
 	if err != nil {
@@ -82,12 +88,12 @@ func readHeadDB(db *os.File) (headDB, error) {
 	return headDB, nil
 }
 
-func readBlobStream(db *os.File, offset uint64, pageSize uint32, dataPagesOffsets []uint32) []byte {
+func readBlobStream(db *os.File, offset uint64, pageSize uint32, dataPagesOffsets []uint32, mu *sync.Mutex) []byte {
 	nextBlock := uint32(1)
 	data := make([]byte, 0, 250)
 	currentOffset := offset
 	for nextBlock != 0 {
-		b := ReadBytes(db, currentOffset, BlobChunkSize)
+		b := ReadBytes(db, currentOffset, BlobChunkSize, mu)
 		nextBlock = binary.LittleEndian.Uint32(b[:4])
 		nextPage := uint32(nextBlock) * BlobChunkSize / pageSize
 		currentOffset = uint64(dataPagesOffsets[nextPage])*uint64(pageSize) + uint64(uint32(nextBlock)*BlobChunkSize%pageSize)
@@ -105,7 +111,7 @@ func readBlockOfReplacemant(BO *BaseOnec, blobOffsetSlice []uint32) []uint32 {
 	blobOffset := blobOffsetSlice[0]
 	//if blobSize == 0 {return make([]uint32, 0)}
 	//fmt.Println(int64(blobOffset)*int64(pageSize) + int64(blobChunkOffset*BlobChunkSize))
-	b := readBlobStream(BO.db, uint64(blobOffset)*uint64(pageSize)+uint64(blobChunkOffset*BlobChunkSize), pageSize, blobOffsetSlice) //ReadBytes(db, int64(blobOffset)*int64(pageSize)+int64(blobChunkOffset*BlobChunkSize), BlobChunkSize)
+	b := readBlobStream(BO.db, uint64(blobOffset)*uint64(pageSize)+uint64(blobChunkOffset*BlobChunkSize), pageSize, blobOffsetSlice, nil) //ReadBytes(db, int64(blobOffset)*int64(pageSize)+int64(blobChunkOffset*BlobChunkSize), BlobChunkSize)
 
 	//lang := b[:32] //Language of base, may be affects on index
 	numblocks := binary.LittleEndian.Uint32(b[32 : 32+4])
@@ -266,7 +272,7 @@ type Field struct {
 
 func readDataPagesOffsets(BO *BaseOnec) []uint32 {
 	pageSize := BO.HeadDB.PageSize
-	b := ReadBytes(BO.db, RootObjectOffset*uint64(pageSize), pageSize) //sig := b[:2] //signature of object	//fatLevel := binary.LittleEndian.Uint16(b[2:4])
+	b := ReadBytes(BO.db, RootObjectOffset*uint64(pageSize), pageSize, nil) //sig := b[:2] //signature of object	//fatLevel := binary.LittleEndian.Uint16(b[2:4])
 	lenth := binary.LittleEndian.Uint64(b[16 : 16+8])
 
 	dataPagesCount := int(math.Ceil(float64(lenth) / float64(pageSize)))
@@ -279,31 +285,56 @@ func readDataPagesOffsets(BO *BaseOnec) []uint32 {
 	return dataPagesOffsets
 }
 
-func readTableDescriptions(BO *BaseOnec, dataPagesOffsets []uint32, blocksOfReplacemant []uint32) ([]Table, error) {
-	var err error
+func readTablesDescriptions(BO *BaseOnec, dataPagesOffsets []uint32, blocksOfReplacemant []uint32, mu *sync.Mutex) ([]Table, error) {
+	//var err error
+	tablesChan := make(chan Table)
+	defer close(tablesChan)
+
+	wg := new(sync.WaitGroup)
 	pageSize := BO.HeadDB.PageSize
-	TableDescription := make([]Table, len(blocksOfReplacemant))
-	for n, chunkOffset := range blocksOfReplacemant {
-		offset := uint64(dataPagesOffsets[uint32(chunkOffset)*BlobChunkSize/pageSize])*uint64(pageSize) + uint64(uint32(chunkOffset)*BlobChunkSize%pageSize)
+	TablesDescription := make([]Table, len(blocksOfReplacemant))
+	for _, chunkOffset := range blocksOfReplacemant {
 		if chunkOffset == 0 {
 			continue
 		}
-		TableDescription[n], err = getTableDescription(string(readBlobStream(BO.db, uint64(offset), pageSize, dataPagesOffsets)))
-		if err != nil {
-			return TableDescription, err
-		}
+
+		//run goroutines for each table
+		wg.Add(1)
+		go func(db *os.File, chunkOffset uint32, pageSize uint32, dataPagesOffsets []uint32, tablesChan chan<- Table, wg *sync.WaitGroup) {
+			defer wg.Done()
+			offset := uint64(dataPagesOffsets[uint32(chunkOffset)*BlobChunkSize/pageSize])*uint64(pageSize) + uint64(uint32(chunkOffset)*BlobChunkSize%pageSize)
+			tablesDescription, err := getTableDescription(string(readBlobStream(db, uint64(offset), pageSize, dataPagesOffsets, mu)))
+			if err != nil {
+				tablesDescription = Table{Name: fmt.Sprint("offset ", offset, " page ", pageSize)}
+				fmt.Println(err)
+				//return err
+			}
+			tablesChan <- tablesDescription
+		}(BO.db, chunkOffset, pageSize, dataPagesOffsets, tablesChan, wg)
 	}
-	return TableDescription, nil
+
+	//read from chan tableDescription
+	n := 0
+	go func(TablesDescription []Table, tablesChan <-chan Table) {
+		for tableDescription := range tablesChan {
+			TablesDescription[n] = tableDescription
+			n++
+		}
+	}(TablesDescription, tablesChan)
+
+	wg.Wait()
+
+	return TablesDescription, nil
 }
 
 // Read Root Object
-func (BO *BaseOnec) RootObject() error {
+func (BO *BaseOnec) RootObject(mu *sync.Mutex) error {
 	var err error
 	dataPagesOffsets := readDataPagesOffsets(BO)
 
 	blocksOfReplacemant := readBlockOfReplacemant(BO, dataPagesOffsets)
 
-	BO.TableDescription, err = readTableDescriptions(BO, dataPagesOffsets, blocksOfReplacemant)
+	BO.TableDescription, err = readTablesDescriptions(BO, dataPagesOffsets, blocksOfReplacemant, mu)
 	if err != nil {
 		return err
 	}
@@ -315,6 +346,7 @@ func DatabaseReader(db *os.File) *BaseOnec {
 		db: db,
 	}
 	var err error
+	mu := new(sync.Mutex)
 	BaseOnec.HeadDB, err = readHeadDB(BaseOnec.db)
 	if err != nil {
 		log.Fatal("HeadDB read failed", err)
@@ -322,7 +354,7 @@ func DatabaseReader(db *os.File) *BaseOnec {
 	if BaseOnec.HeadDB.Ver != Ver8380 {
 		log.Fatal("Do not support another version", BaseOnec.HeadDB.Ver)
 	}
-	err = BaseOnec.RootObject()
+	err = BaseOnec.RootObject(mu)
 	if err != nil {
 		log.Fatal("RootObject read failed ", err)
 	}

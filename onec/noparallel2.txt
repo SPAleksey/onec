@@ -1,7 +1,0 @@
-goos: windows
-goarch: amd64
-pkg: github.com/AlekseySP/onec/onec
-cpu: AMD Ryzen 7 5700U with Radeon Graphics         
-BenchmarkBOReader-16    	       2	 572432450 ns/op	141974716 B/op	  518177 allocs/op
-PASS
-ok  	github.com/AlekseySP/onec/onec	1.993s

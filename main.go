@@ -22,5 +22,6 @@ func main() {
 	BO := onec.DatabaseReader(db)
 	duration := time.Since(start)
 	fmt.Println(len(BO.TableDescription))
+	//fmt.Println(BO.TableDescription)
 	fmt.Println(duration)
 }
