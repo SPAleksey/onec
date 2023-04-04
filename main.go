@@ -9,8 +9,9 @@ import (
 
 func main() {
 
-	path := "C:/GO/onec/py/tests/fixtures/Platform8Demo/8-3-8_4K.1CD"
-	path = "C:/Del/UTDemo/KA/1Cv8.1CD"
+	//path := "C:/GO/onec/py/tests/fixtures/Platform8Demo/8-3-8_4K.1CD"
+	//path = "C:/Del/UTDemo/KA/1Cv8.1CD"
+	path := "C:/Del/UTDemo/ERP2/1Cv8.1CD"
 	db, err := os.Open(path)
 	if err != nil {
 		fmt.Println("error ", err)
