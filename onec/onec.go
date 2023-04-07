@@ -35,7 +35,7 @@ type headDB struct { //8s4bIiI
 type BaseOnec struct {
 	db               *os.File
 	HeadDB           headDB
-	TableDescription []Table
+	TableDescription map[string]Table
 }
 
 type Table struct {
@@ -46,6 +46,17 @@ type Table struct {
 	IndexOffset int
 	RowLength   int
 	Fields      map[string]Field
+}
+
+type Field struct {
+	Name            string
+	FieldType       string
+	NullExist       bool
+	Lenth           int
+	Precision       int
+	CaseSensitive   bool
+	DataFieldOffset int
+	DataLength      int
 }
 
 func ReadBytes(db *os.File, position uint64, lenth uint32, mu *sync.Mutex) []byte {
@@ -259,17 +270,6 @@ func Max(x, y int) int {
 	return x
 }
 
-type Field struct {
-	Name            string
-	FieldType       string
-	NullExist       bool
-	Lenth           int
-	Precision       int
-	CaseSensitive   bool
-	DataFieldOffset int
-	DataLength      int
-}
-
 func readDataPagesOffsets(BO *BaseOnec) []uint32 {
 	pageSize := BO.HeadDB.PageSize
 	b := ReadBytes(BO.db, RootObjectOffset*uint64(pageSize), pageSize, nil) //sig := b[:2] //signature of object	//fatLevel := binary.LittleEndian.Uint16(b[2:4])
@@ -285,14 +285,15 @@ func readDataPagesOffsets(BO *BaseOnec) []uint32 {
 	return dataPagesOffsets
 }
 
-func readTablesDescriptions(BO *BaseOnec, dataPagesOffsets []uint32, blocksOfReplacemant []uint32, mu *sync.Mutex) ([]Table, error) {
+func readTablesDescriptions(BO *BaseOnec, dataPagesOffsets []uint32, blocksOfReplacemant []uint32, mu *sync.Mutex) (map[string]Table, error) {
 	//var err error
 	tablesChan := make(chan Table)
 	defer close(tablesChan)
 
 	wg := new(sync.WaitGroup)
 	pageSize := BO.HeadDB.PageSize
-	TablesDescription := make([]Table, len(blocksOfReplacemant))
+	TablesDescription := make(map[string]Table)
+
 	for _, chunkOffset := range blocksOfReplacemant {
 		if chunkOffset == 0 {
 			continue
@@ -314,11 +315,9 @@ func readTablesDescriptions(BO *BaseOnec, dataPagesOffsets []uint32, blocksOfRep
 	}
 
 	//read from chan tableDescription
-	n := 0
-	go func(TablesDescription []Table, tablesChan <-chan Table) {
+	go func(TablesDescription map[string]Table, tablesChan <-chan Table) {
 		for tableDescription := range tablesChan {
-			TablesDescription[n] = tableDescription
-			n++
+			TablesDescription[tableDescription.Name] = tableDescription
 		}
 	}(TablesDescription, tablesChan)
 
