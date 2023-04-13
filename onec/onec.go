@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,6 +31,7 @@ type BaseOnec struct {
 	db               *os.File
 	HeadDB           headDB
 	TableDescription map[string]Table
+	TablesName       []string
 }
 
 type headDB struct { //8s4bIiI
@@ -48,6 +50,7 @@ type Table struct {
 	IndexOffset        int
 	RowLength          int
 	Fields             map[string]Field
+	FieldsName         []string
 	BlockOfReplacemant []uint32
 }
 
@@ -466,7 +469,7 @@ func readDataPagesOffsets(BO *BaseOnec) []uint32 {
 	return dataPagesOffsets
 }
 
-func readTablesDescriptions(BO *BaseOnec, dataPagesOffsets []uint32, blocksOfReplacemant []uint32, mu *sync.Mutex) (map[string]Table, error) {
+func readTablesDescriptions(BO *BaseOnec, dataPagesOffsets []uint32, blocksOfReplacemant []uint32, mu *sync.Mutex) (map[string]Table, []string, error) {
 	//var err error
 	tablesChan := make(chan Table)
 	defer close(tablesChan)
@@ -474,6 +477,7 @@ func readTablesDescriptions(BO *BaseOnec, dataPagesOffsets []uint32, blocksOfRep
 	wg := new(sync.WaitGroup)
 	pageSize := BO.HeadDB.PageSize
 	TablesDescription := make(map[string]Table)
+	TablesName := make([]string, len(blocksOfReplacemant))
 
 	for _, chunkOffset := range blocksOfReplacemant {
 		if chunkOffset == 0 {
@@ -497,14 +501,17 @@ func readTablesDescriptions(BO *BaseOnec, dataPagesOffsets []uint32, blocksOfRep
 
 	//read from chan tableDescription
 	go func(TablesDescription map[string]Table, tablesChan <-chan Table) {
+		i := 0
 		for tableDescription := range tablesChan {
 			TablesDescription[tableDescription.Name] = tableDescription
+			TablesName[i] = tableDescription.Name
+			i++
 		}
 	}(TablesDescription, tablesChan)
 
 	wg.Wait()
-
-	return TablesDescription, nil
+	sort.Strings(TablesName)
+	return TablesDescription, TablesName, nil
 }
 
 // Read Root Object
@@ -514,14 +521,15 @@ func (BO *BaseOnec) RootObject(mu *sync.Mutex) error {
 
 	blocksOfReplacemant := readBlockOfReplacemantRoot(BO, dataPagesOffsets)
 
-	BO.TableDescription, err = readTablesDescriptions(BO, dataPagesOffsets, blocksOfReplacemant, mu)
+	BO.TableDescription, BO.TablesName, err = readTablesDescriptions(BO, dataPagesOffsets, blocksOfReplacemant, mu)
+
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func DatabaseReader(db *os.File) *BaseOnec {
+func DatabaseReader(db *os.File) (*BaseOnec, error) {
 	BaseOnec := &BaseOnec{
 		db: db,
 	}
@@ -529,14 +537,32 @@ func DatabaseReader(db *os.File) *BaseOnec {
 	mu := new(sync.Mutex)
 	BaseOnec.HeadDB, err = readHeadDB(BaseOnec.db)
 	if err != nil {
-		log.Fatal("HeadDB read failed", err)
+		return nil, err
+		//log.Fatal("HeadDB read failed", err)
 	}
 	if BaseOnec.HeadDB.Ver != Ver8380 {
+		//return nil, errors.New("Do not support another version, this ver: "+ string(BaseOnec.HeadDB.Ver))
 		log.Fatal("Do not support another version", BaseOnec.HeadDB.Ver)
 	}
 	err = BaseOnec.RootObject(mu)
 	if err != nil {
-		log.Fatal("RootObject read failed ", err)
+		return nil, err
+		//log.Fatal("RootObject read failed ", err)
 	}
-	return BaseOnec
+	return BaseOnec, nil
+}
+
+func OpenBaseOnec(path string) (*BaseOnec, error) {
+	db, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer db.Close()
+
+	BaseOnec, err := DatabaseReader(db)
+	if err != nil {
+		return nil, err
+	}
+
+	return BaseOnec, nil
 }

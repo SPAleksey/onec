@@ -52,7 +52,7 @@ func BenchmarkBOReader(b *testing.B) {
 	defer db.Close()
 
 	for i := 0; i < b.N; i++ {
-		BO := DatabaseReader(db)
+		BO, _ := DatabaseReader(db)
 		//_ = BO
 		//fmt.Println(len(BO.TableDescription))
 		_ = BO
