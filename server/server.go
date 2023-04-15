@@ -38,7 +38,7 @@ func (s *server) index() http.HandlerFunc {
 func (s *server) table() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		table := mux.Vars(r)["table"]
-		tmpl := PageTable(table)
+		tmpl := PageTable()
 		data := PageTableData(s.base, table)
 		tmpl.Execute(w, data)
 	}

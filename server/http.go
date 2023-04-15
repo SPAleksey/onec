@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bytes"
+	"fmt"
 	"github.com/AlekseySP/onec/onec"
 	"html/template"
 	"strconv"
@@ -80,21 +82,34 @@ func PageIndexData(b *onec.BaseOnec) IndexPageData {
 	return data
 }
 
-func PageTable(table string) *template.Template {
+type FieldsN struct {
+	FieldsName string
+}
 
-	pageIndex := "<h1>{{.PageTitle}}</h1>\n" +
-		"<ul>\n" +
-		"{{range .Tables}}\n        " +
-		"{{if .Done}}\n            " +
-		"<li class=\"done\"><a href={{.Hyperlink}}>{{.Title}}</a></li>\n        " +
-		"{{else}}\n            " +
-		"<li><a href={{.Hyperlink}}>{{.Title}}</a></li>\n        " +
-		"{{end}}\n    " +
-		"{{end}}\n" +
-		"</ul>"
+type ValuesF struct {
+	Fields []FieldsN
+}
 
-	tmpl := template.New("index")
-	tmpl, err := tmpl.Parse(pageIndex)
+type TablePageData struct {
+	PageTitle string
+	Values    []ValuesF
+}
+
+func PageTable() *template.Template {
+
+	pageTable := "<h1>{{.PageTitle}}</h1>\n" +
+		"<table>\n" +
+		"  {{range .Values}}\n        " + //rows
+		"   <tr>" +
+		"      {{range .Fields}}\n        " + //columns
+		"          <th>{{.FieldsName}}</th>\n        " +
+		"      {{end}}\n" +
+		"   </tr>\n" +
+		"  {{end}}\n" +
+		"</table>"
+
+	tmpl := template.New("table")
+	tmpl, err := tmpl.Parse(pageTable)
 	if err != nil {
 		panic("err parse table template")
 	}
@@ -102,21 +117,46 @@ func PageTable(table string) *template.Template {
 	return tmpl
 }
 
-func PageTableData(b *onec.BaseOnec, table string) IndexPageData {
+func PageTableData(b *onec.BaseOnec, table string) TablePageData {
 
-	data := IndexPageData{
+	var dataValuesF []ValuesF
+	//var dataFieldsN []FieldsN
+
+	data := TablePageData{
 		PageTitle: "table: " + b.TableDescription[table].Name,
-		Tables:    []IndexTable{},
+		Values:    []ValuesF{},
 	}
-	//IndexTables := make([]IndexTable, len(b.TableDescription))
-	for k, _ := range b.TableDescription[table].Fields {
-		IndexTable := IndexTable{
-			Title:     k,
-			Hyperlink: "table/" + k,
-			Done:      true,
+
+	dataFieldsN := make([]FieldsN, len(b.TableDescription[table].FieldsName))
+	for k, v := range b.TableDescription[table].FieldsName {
+		dataFieldsN[k] = FieldsN{v}
+	}
+	dataValuesF = append(dataValuesF, ValuesF{dataFieldsN})
+
+	for n := 0; n < 10; n++ {
+		dataFieldsN := make([]FieldsN, len(dataFieldsN))
+		obj := b.Rows(b.TableDescription[table].Name, n)
+		if obj.Deleted { //do not show deleted object (lenth 5 byte{1}deleted{4}next free object)
+			continue
 		}
-		data.Tables = append(data.Tables, IndexTable)
+		for k, v := range b.TableDescription[table].FieldsName {
+			dataFieldsN[k] = FieldsN{obj.RepresentObject[v]}
+		}
+		dataValuesF = append(dataValuesF, ValuesF{dataFieldsN})
 	}
+	data.Values = dataValuesF
 
 	return data
+}
+
+func ByteSliceToHexString(originalBytes []byte) string {
+	result := make([]byte, 4*len(originalBytes))
+
+	buff := bytes.NewBuffer(result)
+
+	for _, b := range originalBytes {
+		fmt.Fprintf(buff, "0x%02x ", b)
+	}
+
+	return buff.String()
 }

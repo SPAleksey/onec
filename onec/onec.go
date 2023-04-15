@@ -28,7 +28,7 @@ const RootObjectOffset uint64 = 2
 const BlobChunkSize uint32 = 256
 
 type BaseOnec struct {
-	db               *os.File
+	Db               *os.File
 	HeadDB           headDB
 	TableDescription map[string]Table
 	TablesName       []string
@@ -100,7 +100,7 @@ func (BO *BaseOnec) ReadTableObject(BlockOfReplacemant []uint32, Table Table, n 
 		Deleted:         false,
 	}
 
-	bufTableObject := ReadBytesOfObject(BO.db, BlockOfReplacemant, Table.RowLength, int(BO.HeadDB.PageSize), n, nil)
+	bufTableObject := ReadBytesOfObject(BO.Db, BlockOfReplacemant, Table.RowLength, int(BO.HeadDB.PageSize), n, nil)
 	deleted := bufTableObject[:1][0] //strconv.Atoi(string(bufTableObject[:1]))
 
 	if deleted == 1 {
@@ -194,7 +194,7 @@ func ReadBytes(db *os.File, position uint64, lenth uint32, mu *sync.Mutex) []byt
 func readHeadDB(db *os.File) (headDB, error) {
 	headDB := headDB{}
 	/* do not work on benchmark
-	rd := bufio.NewReader(db)
+	rd := bufio.NewReader(Db)
 	buf, err := rd.Peek(24)
 	if err != nil {
 		log.Fatal("rd.Read failed", err)
@@ -236,7 +236,7 @@ func readBlockOfReplacemantRoot(BO *BaseOnec, blobOffsetSlice []uint32) []uint32
 	blobOffset := blobOffsetSlice[0]
 	//if blobSize == 0 {return make([]uint32, 0)}
 	//fmt.Println(int64(blobOffset)*int64(pageSize) + int64(blobChunkOffset*BlobChunkSize))
-	b := readBlobStream(BO.db, uint64(blobOffset)*uint64(pageSize)+uint64(blobChunkOffset*BlobChunkSize), pageSize, blobOffsetSlice, nil) //ReadBytes(db, int64(blobOffset)*int64(pageSize)+int64(blobChunkOffset*BlobChunkSize), BlobChunkSize)
+	b := readBlobStream(BO.Db, uint64(blobOffset)*uint64(pageSize)+uint64(blobChunkOffset*BlobChunkSize), pageSize, blobOffsetSlice, nil) //ReadBytes(Db, int64(blobOffset)*int64(pageSize)+int64(blobChunkOffset*BlobChunkSize), BlobChunkSize)
 
 	//lang := b[:32] //Language of base, may be affects on index
 	numblocks := binary.LittleEndian.Uint32(b[32 : 32+4])
@@ -265,7 +265,7 @@ func ReadBlockOfReplacemant(BO *BaseOnec, table Table) []uint32 {
 	      first 5 filed = 24 bytes
 	*/
 
-	buf := ReadBytes(BO.db, offset, pageSize, nil)
+	buf := ReadBytes(BO.Db, offset, pageSize, nil)
 	//a0 := [2]byte(buf)
 	//fatLevel := [1]byte(buf[2:3])
 
@@ -290,7 +290,7 @@ func ReadBlockOfReplacemant(BO *BaseOnec, table Table) []uint32 {
 			index_pages_offsets[n] = pages_offset
 		}
 		for n := 0; n < len(index_pages_offsets); n++ {
-			buf = ReadBytes(BO.db, uint64(index_pages_offsets[n])*uint64(pageSize), pageSize, nil)
+			buf = ReadBytes(BO.Db, uint64(index_pages_offsets[n])*uint64(pageSize), pageSize, nil)
 			for i := 0; i < len(buf)/4; i++ {
 				block := binary.LittleEndian.Uint32(buf[n*4 : 1+(n+1)*4])
 				if block == 0 {
@@ -370,6 +370,7 @@ func getTableDescription(s string) (Table, error) {
 		BlobOffset:         blobOffset,
 		IndexOffset:        indexOffset,
 		Fields:             make(map[string]Field),
+		FieldsName:         []string{},
 		BlockOfReplacemant: make([]uint32, 0, 0),
 	}
 
@@ -382,6 +383,7 @@ func getTableDescription(s string) (Table, error) {
 	}
 
 	splitFields := strings.Split(result[2], "\n")
+	TableFieldsName := make([]string, len(splitFields))
 
 	for _, field_str := range splitFields {
 		res := FieldDescriptionPattern.FindStringSubmatch(field_str)
@@ -433,8 +435,11 @@ func getTableDescription(s string) (Table, error) {
 			DataLength:      dataLength,
 		}
 		Table.Fields[name] = Field
+		TableFieldsName = append(TableFieldsName, name)
 	}
 	Table.RowLength = Max(5, offset)
+	sort.Strings(TableFieldsName)
+	Table.FieldsName = TableFieldsName
 
 	return Table, nil
 }
@@ -456,7 +461,7 @@ func Min(x, y int) int {
 
 func readDataPagesOffsets(BO *BaseOnec) []uint32 {
 	pageSize := BO.HeadDB.PageSize
-	b := ReadBytes(BO.db, RootObjectOffset*uint64(pageSize), pageSize, nil) //sig := b[:2] //signature of object	//fatLevel := binary.LittleEndian.Uint16(b[2:4])
+	b := ReadBytes(BO.Db, RootObjectOffset*uint64(pageSize), pageSize, nil) //sig := b[:2] //signature of object	//fatLevel := binary.LittleEndian.Uint16(b[2:4])
 	lenth := binary.LittleEndian.Uint64(b[16 : 16+8])
 
 	dataPagesCount := int(math.Ceil(float64(lenth) / float64(pageSize)))
@@ -496,7 +501,7 @@ func readTablesDescriptions(BO *BaseOnec, dataPagesOffsets []uint32, blocksOfRep
 				//return err
 			}
 			tablesChan <- tablesDescription
-		}(BO.db, chunkOffset, pageSize, dataPagesOffsets, tablesChan, wg)
+		}(BO.Db, chunkOffset, pageSize, dataPagesOffsets, tablesChan, wg)
 	}
 
 	//read from chan tableDescription
@@ -531,11 +536,11 @@ func (BO *BaseOnec) RootObject(mu *sync.Mutex) error {
 
 func DatabaseReader(db *os.File) (*BaseOnec, error) {
 	BaseOnec := &BaseOnec{
-		db: db,
+		Db: db,
 	}
 	var err error
 	mu := new(sync.Mutex)
-	BaseOnec.HeadDB, err = readHeadDB(BaseOnec.db)
+	BaseOnec.HeadDB, err = readHeadDB(BaseOnec.Db)
 	if err != nil {
 		return nil, err
 		//log.Fatal("HeadDB read failed", err)
@@ -557,7 +562,7 @@ func OpenBaseOnec(path string) (*BaseOnec, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	//	defer Db.Close()
 
 	BaseOnec, err := DatabaseReader(db)
 	if err != nil {

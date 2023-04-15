@@ -26,6 +26,8 @@ func main() {
 		fmt.Println(err)
 		return
 	}
+	defer BaseOnec.Db.Close()
+
 	err = server.Start(BaseOnec, flagI)
 	if err != nil {
 		fmt.Println(err)
