@@ -51,6 +51,7 @@ type Table struct {
 	RowLength          int
 	Fields             map[string]Field
 	FieldsName         []string
+	NoRecords          bool //0 records of this table in base
 	BlockOfReplacemant []uint32
 }
 
@@ -91,6 +92,10 @@ func ReadBytesOfObject(db *os.File, BlockOfReplacemant []uint32, RowLength int, 
 }
 
 func (BO *BaseOnec) ReadTableObject(BlockOfReplacemant []uint32, Table Table, n int) Object {
+
+	if Table.NoRecords {
+		return Object{}
+	}
 
 	Object := Object{
 		Table:           &Table,
@@ -160,14 +165,20 @@ func FromFormat1C(value []byte, fieldType string) string {
 	return returnValue
 }
 
-func (BO *BaseOnec) Rows(s string, n int) Object {
-	//Rows := make([]Field, 10, 10)
-	//pageSize := BO.HeadDB.PageSize
-	if len(BO.TableDescription[s].BlockOfReplacemant) == 0 {
-		tempT := BO.TableDescription[s]
-		tempT.BlockOfReplacemant = ReadBlockOfReplacemant(BO, BO.TableDescription[s])
-		BO.TableDescription[s] = tempT
+func (BO *BaseOnec) CheckBlockOfReplacemant(s string) {
+	if len(BO.TableDescription[s].BlockOfReplacemant) == 0 && !BO.TableDescription[s].NoRecords {
+		BlockOfReplacemant := ReadBlockOfReplacemant(BO, BO.TableDescription[s])
+		if len(BlockOfReplacemant) != 0 {
+			tempT := BO.TableDescription[s]
+			tempT.BlockOfReplacemant = BlockOfReplacemant
+			BO.TableDescription[s] = tempT
+		}
 	}
+}
+
+func (BO *BaseOnec) Rows(s string, n int) Object {
+
+	BO.CheckBlockOfReplacemant(s)
 
 	return BO.ReadTableObject(BO.TableDescription[s].BlockOfReplacemant, BO.TableDescription[s], n)
 	//return Rows
@@ -304,8 +315,14 @@ func ReadBlockOfReplacemant(BO *BaseOnec, table Table) []uint32 {
 	}
 
 	_ = sig
-	fmt.Println("2 bytes ", (buf[2:3]))
+	//fmt.Println("2 bytes ", (buf[2:3]))
 	//fmt.Println("2 bytes ", hex.EncodeToString((buf[:2])))
+	if len(blocksOfReplacemant) == 0 { //0 records in table
+		TempT := BO.TableDescription[table.Name]
+		TempT.NoRecords = true
+		BO.TableDescription[table.Name] = TempT
+		//table.NoRecords = true
+	}
 
 	return blocksOfReplacemant
 }
@@ -383,7 +400,7 @@ func getTableDescription(s string) (Table, error) {
 	}
 
 	splitFields := strings.Split(result[2], "\n")
-	TableFieldsName := make([]string, len(splitFields))
+	TableFieldsName := make([]string, 0, len(splitFields))
 
 	for _, field_str := range splitFields {
 		res := FieldDescriptionPattern.FindStringSubmatch(field_str)

@@ -128,21 +128,27 @@ func PageTableData(b *onec.BaseOnec, table string) TablePageData {
 	}
 
 	dataFieldsN := make([]FieldsN, len(b.TableDescription[table].FieldsName))
+
 	for k, v := range b.TableDescription[table].FieldsName {
 		dataFieldsN[k] = FieldsN{v}
 	}
 	dataValuesF = append(dataValuesF, ValuesF{dataFieldsN})
 
-	for n := 0; n < 10; n++ {
-		dataFieldsN := make([]FieldsN, len(dataFieldsN))
-		obj := b.Rows(b.TableDescription[table].Name, n)
-		if obj.Deleted { //do not show deleted object (lenth 5 byte{1}deleted{4}next free object)
-			continue
+	if !b.TableDescription[table].NoRecords {
+		for n := 0; n < 10; n++ {
+			dataFieldsN := make([]FieldsN, len(dataFieldsN))
+			obj := b.Rows(b.TableDescription[table].Name, n)
+			if obj.Deleted { //do not show deleted object (lenth 5 byte{1}deleted{4}next free object)
+				continue
+			}
+			if b.TableDescription[table].NoRecords {
+				break
+			}
+			for k, v := range b.TableDescription[table].FieldsName {
+				dataFieldsN[k] = FieldsN{obj.RepresentObject[v]}
+			}
+			dataValuesF = append(dataValuesF, ValuesF{dataFieldsN})
 		}
-		for k, v := range b.TableDescription[table].FieldsName {
-			dataFieldsN[k] = FieldsN{obj.RepresentObject[v]}
-		}
-		dataValuesF = append(dataValuesF, ValuesF{dataFieldsN})
 	}
 	data.Values = dataValuesF
 
