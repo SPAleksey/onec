@@ -128,7 +128,7 @@ func (BO *BaseOnec) ReadTableObject(BlockOfReplacemant []uint32, Table Table, n 
 			}
 		}
 		Object.ValueObject[k] = value
-		Object.RepresentObject[k] = FromFormat1C(value, v.FieldType)
+		Object.RepresentObject[k] = FromFormat1C(value, v)
 		/*
 			if field.null_exists:
 			if buffer[:1] == b'\x00':
@@ -143,12 +143,17 @@ func (BO *BaseOnec) ReadTableObject(BlockOfReplacemant []uint32, Table Table, n 
 	return Object
 }
 
-func FromFormat1C(value []byte, fieldType string) string {
+func FromFormat1C(value []byte, field Field) string {
 	var returnValue string
 
-	switch fieldType {
+	switch field.FieldType {
 	case "NVC":
 		lenth := binary.LittleEndian.Uint16(value[:2])
+
+		if lenth > uint16(field.Lenth) {
+			lenth = uint16(field.Lenth)
+		}
+
 		//fmt.Println("lenth of NVC", lenth)
 		var value16 []uint16
 		var v16 uint16
@@ -391,8 +396,8 @@ func getTableDescription(s string) (Table, error) {
 		BlockOfReplacemant: make([]uint32, 0, 0),
 	}
 
-	contain := strings.Contains(result[5], "RV")
-
+	//If exist field type "RV" than it fist
+	contain := strings.Contains(result[2], "RV")
 	if contain {
 		offset = 17
 	} else {

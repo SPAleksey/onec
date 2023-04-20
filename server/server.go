@@ -25,6 +25,7 @@ func NewServer(router *mux.Router, b *onec.BaseOnec) *server {
 func (s *server) configureRouter() {
 	s.router.Handle("/", s.index())
 	s.router.Handle("/table/{table}", s.table())
+	s.router.Handle("/tabledescription/{table}", s.tabledescription())
 }
 
 func (s *server) index() http.HandlerFunc {
@@ -40,6 +41,15 @@ func (s *server) table() http.HandlerFunc {
 		table := mux.Vars(r)["table"]
 		tmpl := PageTable()
 		data := PageTableData(s.base, table)
+		tmpl.Execute(w, data)
+	}
+}
+
+func (s *server) tabledescription() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		table := mux.Vars(r)["table"]
+		tmpl := PageTableDescription()
+		data := PageTableDescriptionData(s.base, table)
 		tmpl.Execute(w, data)
 	}
 }
