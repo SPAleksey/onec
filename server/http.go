@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"github.com/AlekseySP/onec/onec"
 	"html/template"
 	"strconv"
@@ -219,10 +220,14 @@ func PageTableData(b *onec.BaseOnec, table string) TablePageData {
 	}
 	dataValuesF = append(dataValuesF, ValuesF{dataFieldsN})
 
+	quant := 0
 	if !b.TableDescription[table].NoRecords {
-		for n := 0; n < 10; n++ {
+		for n := 0; n < 1000000; n++ {
 			dataFieldsN := make([]FieldsN, len(dataFieldsN))
 			obj := b.Rows(b.TableDescription[table].Name, n)
+			if obj.NotExist {
+				break
+			}
 			if obj.Deleted { //do not show deleted object (lenth 5 byte{1}deleted{4}next free object)
 				continue
 			}
@@ -233,9 +238,10 @@ func PageTableData(b *onec.BaseOnec, table string) TablePageData {
 				dataFieldsN[k] = FieldsN{obj.RepresentObject[v]}
 			}
 			dataValuesF = append(dataValuesF, ValuesF{dataFieldsN})
+			quant++
 		}
 	}
 	data.Values = dataValuesF
-
+	fmt.Println(quant)
 	return data
 }

@@ -17,7 +17,6 @@ func init() {
 }
 
 func main() {
-
 	flag.Parse()
 	cmd.CheckFlag(&flagS)
 
@@ -34,7 +33,6 @@ func main() {
 		return
 	}
 	//flagS := cmd.CheckFlag(flagS)
-
 	fmt.Println(flagS)
 
 	return
@@ -68,16 +66,12 @@ func main() {
 						fmt.Println(v)
 						dl += v.DataLength
 					}
-
-
 		fmt.Println(len(BO.TableDescription))
 		//fmt.Println(BO.TableDescription)
 		duration := time.Since(start)
 		fmt.Println(duration)
 		m := onec.ReadBlockOfReplacemant(BO, BO.TableDescription["V8USERS"])
 		fmt.Println(m)
-
 		fmt.Println("data lenth ", dl)
 	*/
-
 }

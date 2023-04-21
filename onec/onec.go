@@ -72,17 +72,36 @@ type Object struct {
 	RepresentObject map[string]string
 	Number          int //o to ...
 	Deleted         bool
+	NotExist        bool
 }
 
 func ReadBytesOfObject(db *os.File, BlockOfReplacemant []uint32, RowLength int, PageSize int, n int, mu *sync.Mutex) []byte {
-	var ToRead, ToEndOfBlock int
+	var ToRead, ToEndOfBlock, pos int
 	offsetOfNObject := n * RowLength
 	LefrToRead := RowLength
 	bufTableObject := make([]byte, 0, RowLength)
 
+	if offsetOfNObject/PageSize > len(BlockOfReplacemant) { //out of file
+		fmt.Println("out1 ", n)
+		return []byte{}
+	}
+
 	for i := 0; LefrToRead > 0; i++ {
-		pos := int(BlockOfReplacemant[offsetOfNObject/PageSize+i])*PageSize + (offsetOfNObject % PageSize)
-		ToEndOfBlock = PageSize - (offsetOfNObject % PageSize)
+		if (offsetOfNObject/PageSize + i) >= len(BlockOfReplacemant) { //out of file
+			fmt.Println("out2 ", n)
+			return []byte{}
+		}
+		if i == 0 {
+			pos = int(BlockOfReplacemant[offsetOfNObject/PageSize])*PageSize + (offsetOfNObject % PageSize)
+		} else {
+			pos = int(BlockOfReplacemant[offsetOfNObject/PageSize+i]) * PageSize
+		}
+
+		if i == 0 {
+			ToEndOfBlock = PageSize - (offsetOfNObject % PageSize)
+		} else {
+			ToEndOfBlock = PageSize
+		}
 		ToRead = Min(LefrToRead, ToEndOfBlock)
 		LefrToRead -= ToRead
 		buf := ReadBytes(db, uint64(pos), uint32(ToRead), nil)
@@ -106,32 +125,23 @@ func (BO *BaseOnec) ReadTableObject(BlockOfReplacemant []uint32, Table Table, n 
 	}
 
 	bufTableObject := ReadBytesOfObject(BO.Db, BlockOfReplacemant, Table.RowLength, int(BO.HeadDB.PageSize), n, nil)
+
+	if len(bufTableObject) == 0 {
+		Object.NotExist = true
+		return Object
+	}
+
 	deleted := bufTableObject[:1][0] //strconv.Atoi(string(bufTableObject[:1]))
 
 	if deleted == 1 {
 		Object.Deleted = true
 		return Object
 	}
-	//RepresentObject := make(map[string][]byte)
+
 	for k, v := range Table.Fields {
-		//RepresentObject[k] = bufTableObject[v.DataFieldOffset:(v.DataFieldOffset + v.DataLength)]
-		//fmt.Println(k, " val: ", RepresentObject[k])
-		//fmt.Println(k, " val: ", string(RepresentObject[k]))
-		//fmt.Println(k, " FieldType: ", v.FieldType)
 		value := bufTableObject[v.DataFieldOffset:(v.DataFieldOffset + v.DataLength)] //RepresentObject[k]
-		/*
-			if v.NullExist {
-				if value[:1][0] == 0 {
-					//value = nil
-					//fmt.Println(k, " NullExist FieldType: ", v.FieldType)
-				} else {
-					value = value[1:]
-				}
-			}
-		*/
 		Object.ValueObject[k] = value
 		Object.RepresentObject[k] = FromFormat1C(value, v)
-
 	}
 	return Object
 }
@@ -236,7 +246,6 @@ func (BO *BaseOnec) CheckBlockOfReplacemant(s string) {
 }
 
 func (BO *BaseOnec) Rows(s string, n int) Object {
-
 	BO.CheckBlockOfReplacemant(s)
 
 	return BO.ReadTableObject(BO.TableDescription[s].BlockOfReplacemant, BO.TableDescription[s], n)
@@ -340,7 +349,8 @@ func ReadBlockOfReplacemant(BO *BaseOnec, table Table) []uint32 {
 	//fatLevel := [1]byte(buf[2:3])
 
 	sig := hex.EncodeToString(buf[:2])
-	if sig == "1cfd" {
+	if sig != "1cfd" {
+		fmt.Println("sig??? ", sig)
 	}
 	fatLevel := buf[2:3][0] //fatLevel, _ :=strconv.Atoi(string(buf[2:3]))
 	lenth := binary.LittleEndian.Uint64(buf[16:25])
@@ -558,7 +568,7 @@ func readTablesDescriptions(BO *BaseOnec, dataPagesOffsets []uint32, blocksOfRep
 	wg := new(sync.WaitGroup)
 	pageSize := BO.HeadDB.PageSize
 	TablesDescription := make(map[string]Table)
-	TablesName := make([]string, len(blocksOfReplacemant))
+	TablesName := make([]string, 0, len(blocksOfReplacemant))
 
 	for _, chunkOffset := range blocksOfReplacemant {
 		if chunkOffset == 0 {
@@ -585,7 +595,7 @@ func readTablesDescriptions(BO *BaseOnec, dataPagesOffsets []uint32, blocksOfRep
 		i := 0
 		for tableDescription := range tablesChan {
 			TablesDescription[tableDescription.Name] = tableDescription
-			TablesName[i] = tableDescription.Name
+			TablesName = append(TablesName, tableDescription.Name)
 			i++
 		}
 	}(TablesDescription, tablesChan)
