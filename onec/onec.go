@@ -154,7 +154,6 @@ func FromFormat1C(value []byte, field Field) string {
 			lenth = uint16(field.Lenth)
 		}
 
-		//fmt.Println("lenth of NVC", lenth)
 		var value16 []uint16
 		var v16 uint16
 		for n := 1; n <= int(lenth); n++ { //len(value)/2-2; n++ {
@@ -162,13 +161,11 @@ func FromFormat1C(value []byte, field Field) string {
 			value16 = append(value16, v16)
 		}
 		enc := utf16.Decode(value16)
-		//fmt.Println("value UTF16 of NVC", string(enc))
 		returnValue = string(enc)
 	case "DT": //«DT» - дата-время. Длина поля 7 байт. Содержит данные в двоично-десятичном виде. Первые 2 байта содержат четыре цифры года, третий байт – две цифры месяца, четвертый байт – день, пятый – часы, шестой – минуты и седьмой – секунды, все также по 2 цифры.
 		d := make([]string, 0, 7)
 		var t string
 		for _, b := range value {
-			//fmt.Println(b)
 			t = strconv.FormatInt(int64(b), 16)
 			if len(t) == 1 {
 				t = "0" + t
@@ -176,7 +173,7 @@ func FromFormat1C(value []byte, field Field) string {
 			d = append(d, t)
 		}
 		returnValue = d[0] + d[1] + "." + d[2] + "." + d[3] + " " + d[4] + ":" + d[5] + ":" + d[6]
-		//fmt.Println(returnValue)
+
 	default:
 		returnValue = ByteSliceToHexString(value)
 	}

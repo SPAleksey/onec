@@ -86,6 +86,7 @@ func PageIndexData(b *onec.BaseOnec) IndexPageData {
 
 type DataTableDescription struct {
 	PageTitle         string
+	Hyperlink         string
 	TablesDescription []TableDescription
 }
 
@@ -102,7 +103,8 @@ type TableDescription struct {
 
 func PageTableDescription() *template.Template {
 
-	pageTableDescription := "<h1>{{.PageTitle}}</h1>\n" +
+	pageTableDescription := "<h1><a href=\"\\\">BASE </a>{{.PageTitle}}</h1>\n" +
+		" <h1><a href={{.Hyperlink}}>data</a></h1>\n        " +
 		"<table>\n" +
 		"  {{range .TablesDescription}}\n        " +
 		"   <tr>" +
@@ -131,6 +133,7 @@ func PageTableDescriptionData(b *onec.BaseOnec, table string) DataTableDescripti
 
 	data := DataTableDescription{
 		PageTitle: "table: " + b.TableDescription[table].Name,
+		Hyperlink: "/table/" + table,
 		TablesDescription: []TableDescription{{
 			Name:            "Name",
 			FieldType:       "Field Type",
@@ -170,13 +173,15 @@ type ValuesF struct {
 }
 
 type TablePageData struct {
-	PageTitle string
-	Values    []ValuesF
+	PageTitle            string
+	HyperLinkDescription string
+	Values               []ValuesF
 }
 
 func PageTable() *template.Template {
 
-	pageTable := "<h1>{{.PageTitle}}</h1>\n" +
+	pageTable := "<h1><a href=\"\\\">BASE </a>{{.PageTitle}}</h1>\n" +
+		" <h1><a href={{.HyperLinkDescription}}>table description</a></h1>\n        " +
 		"<table>\n" +
 		"  {{range .Values}}\n        " + //rows
 		"   <tr>" +
@@ -202,8 +207,9 @@ func PageTableData(b *onec.BaseOnec, table string) TablePageData {
 	//var dataFieldsN []FieldsN
 
 	data := TablePageData{
-		PageTitle: "table: " + b.TableDescription[table].Name,
-		Values:    []ValuesF{},
+		PageTitle:            "table: " + b.TableDescription[table].Name,
+		HyperLinkDescription: "/tabledescription/" + table,
+		Values:               []ValuesF{},
 	}
 
 	dataFieldsN := make([]FieldsN, len(b.TableDescription[table].FieldsName))
