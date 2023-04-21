@@ -10,7 +10,7 @@ func TestFromFormat1C(t *testing.T) {
 	testCases := []struct {
 		name          string
 		value         []byte
-		fieldType     string
+		field         Field
 		expectedValue string
 	}{{
 		name: "Менеджер по закупкам",
@@ -23,12 +23,36 @@ func TestFromFormat1C(t *testing.T) {
 			32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0,
 			32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0, 32, 0,
 			32, 0, 32, 0, 32, 0, 32, 0},
-		fieldType:     "NVC",
+		field: Field{
+			Name:            "u",
+			FieldType:       "NVC",
+			NullExist:       false,
+			Lenth:           20,
+			Precision:       0,
+			CaseSensitive:   false,
+			DataFieldOffset: 0,
+			DataLength:      20,
+		},
 		expectedValue: "Менеджер по закупкам",
-	}}
+	}, {
+		name:  "2013.04.03 14:41:21",
+		value: []byte{32, 19, 4, 3, 20, 65, 33},
+		field: Field{
+			Name:            "d",
+			FieldType:       "DT",
+			NullExist:       false,
+			Lenth:           0,
+			Precision:       0,
+			CaseSensitive:   false,
+			DataFieldOffset: 0,
+			DataLength:      0,
+		},
+		expectedValue: "2013.04.03 14:41:21",
+	},
+	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			Value := FromFormat1C(tc.value, tc.fieldType)
+			Value := FromFormat1C(tc.value, tc.field)
 			if Value != tc.expectedValue {
 				t.Error(
 					"For", tc.value,

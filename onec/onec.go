@@ -147,7 +147,7 @@ func FromFormat1C(value []byte, field Field) string {
 	var returnValue string
 
 	switch field.FieldType {
-	case "NVC":
+	case "NVC": //«NVC» - строка переменной длины. Длина поля равна FieldLength * 2 + 2 байт. Первые 2 байта содержат длину строки (максимум FieldLength). Оставшиеся байты представляет собой строку в формате Unicode (каждый символ занимает 2 байта).
 		lenth := binary.LittleEndian.Uint16(value[:2])
 
 		if lenth > uint16(field.Lenth) {
@@ -164,10 +164,39 @@ func FromFormat1C(value []byte, field Field) string {
 		enc := utf16.Decode(value16)
 		//fmt.Println("value UTF16 of NVC", string(enc))
 		returnValue = string(enc)
+	case "DT": //«DT» - дата-время. Длина поля 7 байт. Содержит данные в двоично-десятичном виде. Первые 2 байта содержат четыре цифры года, третий байт – две цифры месяца, четвертый байт – день, пятый – часы, шестой – минуты и седьмой – секунды, все также по 2 цифры.
+		d := make([]string, 0, 7)
+		var t string
+		for _, b := range value {
+			//fmt.Println(b)
+			t = strconv.FormatInt(int64(b), 16)
+			if len(t) == 1 {
+				t = "0" + t
+			}
+			d = append(d, t)
+		}
+		returnValue = d[0] + d[1] + "." + d[2] + "." + d[3] + " " + d[4] + ":" + d[5] + ":" + d[6]
+		//fmt.Println(returnValue)
 	default:
-		returnValue = string(value)
+		returnValue = ByteSliceToHexString(value)
 	}
 	return returnValue
+}
+
+func ByteSliceToHexString(originalBytes []byte) string {
+	result := make([]byte, 4*len(originalBytes))
+
+	buff := bytes.NewBuffer(result)
+
+	for _, b := range originalBytes {
+		//fmt.Println(b)
+		//output := strconv.FormatInt(int64(b), 16)
+		//fmt.Println("The hexadecimal conversion of", b, "is", output)
+		fmt.Fprintf(buff, "0x%02x ", b)
+	}
+
+	//fmt.Println(buff.String())
+	return buff.String()
 }
 
 func (BO *BaseOnec) CheckBlockOfReplacemant(s string) {

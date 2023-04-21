@@ -1,8 +1,6 @@
 package server
 
 import (
-	"bytes"
-	"fmt"
 	"github.com/AlekseySP/onec/onec"
 	"html/template"
 	"strconv"
@@ -234,16 +232,4 @@ func PageTableData(b *onec.BaseOnec, table string) TablePageData {
 	data.Values = dataValuesF
 
 	return data
-}
-
-func ByteSliceToHexString(originalBytes []byte) string {
-	result := make([]byte, 4*len(originalBytes))
-
-	buff := bytes.NewBuffer(result)
-
-	for _, b := range originalBytes {
-		fmt.Fprintf(buff, "0x%02x ", b)
-	}
-
-	return buff.String()
 }
