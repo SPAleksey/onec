@@ -25,7 +25,7 @@ type IndexPageData struct {
 func PageIndex() *template.Template {
 
 	pageIndex := "<h1>{{.PageTitle}}</h1>\n" +
-		"<table>\n" +
+		"<table border=\"1\">\n" +
 		"  {{range .Tables}}\n        " +
 		"   <tr>" +
 		"     {{if .Done}}\n            " +
@@ -105,7 +105,7 @@ func PageTableDescription() *template.Template {
 
 	pageTableDescription := "<h1><a href=\"\\\">BASE </a>{{.PageTitle}}</h1>\n" +
 		" <h1><a href={{.Hyperlink}}>data</a></h1>\n        " +
-		"<table>\n" +
+		"<table border=\"1\">\n" +
 		"  {{range .TablesDescription}}\n        " +
 		"   <tr>" +
 		"          <th align=\"left\">{{.Name}}</th>\n        " +
@@ -182,7 +182,7 @@ func PageTable() *template.Template {
 
 	pageTable := "<h1><a href=\"\\\">BASE </a>{{.PageTitle}}</h1>\n" +
 		" <h1><a href={{.HyperLinkDescription}}>table description</a></h1>\n        " +
-		"<table>\n" +
+		"<table border=\"1\">\n" +
 		"  {{range .Values}}\n        " + //rows
 		"   <tr>" +
 		"      {{range .Fields}}\n        " + //columns

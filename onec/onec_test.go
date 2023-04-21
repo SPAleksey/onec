@@ -48,6 +48,34 @@ func TestFromFormat1C(t *testing.T) {
 			DataLength:      0,
 		},
 		expectedValue: "2013.04.03 14:41:21",
+	}, {
+		name:  "84.723",
+		value: []byte{24, 71, 35},
+		field: Field{
+			Name:            "n",
+			FieldType:       "N",
+			NullExist:       false,
+			Lenth:           5,
+			Precision:       3,
+			CaseSensitive:   false,
+			DataFieldOffset: 0,
+			DataLength:      0,
+		},
+		expectedValue: "8.472300",
+	}, {
+		name:  "324",
+		value: []byte{16, 0, 0, 0, 0, 0, 0, 0, 0, 50, 64},
+		field: Field{
+			Name:            "DATASIZE",
+			FieldType:       "N",
+			NullExist:       false,
+			Lenth:           20,
+			Precision:       0,
+			CaseSensitive:   true,
+			DataFieldOffset: 276,
+			DataLength:      11,
+		},
+		expectedValue: "324.000000",
 	},
 	}
 	for _, tc := range testCases {

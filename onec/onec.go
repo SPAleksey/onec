@@ -112,32 +112,25 @@ func (BO *BaseOnec) ReadTableObject(BlockOfReplacemant []uint32, Table Table, n 
 		Object.Deleted = true
 		return Object
 	}
-	RepresentObject := make(map[string][]byte)
+	//RepresentObject := make(map[string][]byte)
 	for k, v := range Table.Fields {
-		RepresentObject[k] = bufTableObject[v.DataFieldOffset:(v.DataFieldOffset + v.DataLength)]
+		//RepresentObject[k] = bufTableObject[v.DataFieldOffset:(v.DataFieldOffset + v.DataLength)]
 		//fmt.Println(k, " val: ", RepresentObject[k])
 		//fmt.Println(k, " val: ", string(RepresentObject[k]))
 		//fmt.Println(k, " FieldType: ", v.FieldType)
-		value := RepresentObject[k]
-		if v.NullExist {
-			if value[:1][0] == 0 {
-				//value = nil
-				//fmt.Println(k, " NullExist FieldType: ", v.FieldType)
-			} else {
-				value = value[1:]
+		value := bufTableObject[v.DataFieldOffset:(v.DataFieldOffset + v.DataLength)] //RepresentObject[k]
+		/*
+			if v.NullExist {
+				if value[:1][0] == 0 {
+					//value = nil
+					//fmt.Println(k, " NullExist FieldType: ", v.FieldType)
+				} else {
+					value = value[1:]
+				}
 			}
-		}
+		*/
 		Object.ValueObject[k] = value
 		Object.RepresentObject[k] = FromFormat1C(value, v)
-		/*
-			if field.null_exists:
-			if buffer[:1] == b'\x00':
-			# Поле не содержит значения (NULL)
-			return None
-			else:
-			# Обрезаем флаг пустого значения
-			buffer = buffer[1:]
-		*/
 
 	}
 	return Object
@@ -145,6 +138,13 @@ func (BO *BaseOnec) ReadTableObject(BlockOfReplacemant []uint32, Table Table, n 
 
 func FromFormat1C(value []byte, field Field) string {
 	var returnValue string
+
+	if field.NullExist {
+		if int(value[0]) == 0 {
+			return "" //Поле не содержит значения (NULL)
+		}
+		value = value[1:] //Обрезаем флаг пустого значения
+	}
 
 	switch field.FieldType {
 	case "NVC": //«NVC» - строка переменной длины. Длина поля равна FieldLength * 2 + 2 байт. Первые 2 байта содержат длину строки (максимум FieldLength). Оставшиеся байты представляет собой строку в формате Unicode (каждый символ занимает 2 байта).
@@ -173,7 +173,22 @@ func FromFormat1C(value []byte, field Field) string {
 			d = append(d, t)
 		}
 		returnValue = d[0] + d[1] + "." + d[2] + "." + d[3] + " " + d[4] + ":" + d[5] + ":" + d[6]
-
+	case "N": //«N» - число. Длина поля в байтах равна Цел((FieldLength + 2) / 2). Числа хранятся в двоично-десятичном виде. Первый полубайт означает знак числа. 0 – число отрицательное, 1 – положительное. Каждый следующий полубайт соответствует одной десятичной цифре. Всего цифр FieldLength. Десятичная точка находится в FieldPrecision цифрах справа. Например, FieldLength = 5, FieldPrecision = 3. Байты 0x18, 0x47, 0x23 означают число 84.723, а байты 0x00, 0x00, 0x91 представляют число -0.091.
+		Ib, _ := strconv.Atoi(strconv.FormatInt(int64(value[0]), 16))
+		sign := ((Ib/10)*2 - 1)
+		returnValueF := float64(sign * Ib % 10)
+		//for i := 1; i < field.Lenth/2+1; i++ {
+		for i := 1; i < len(value); i++ {
+			Ib, _ = strconv.Atoi(strconv.FormatInt(int64(value[i]), 16))
+			returnValueF = returnValueF*100 + float64(Ib) // float64(Ib/10)*10 + float64(Ib%10)
+		}
+		returnValueF = returnValueF / math.Pow10(field.Precision+1)
+		returnValue = fmt.Sprintf("%f", returnValueF)
+	case "L":
+		if value[0] == 0 {
+			return "false"
+		}
+		return "true"
 	default:
 		returnValue = ByteSliceToHexString(value)
 	}
@@ -181,6 +196,19 @@ func FromFormat1C(value []byte, field Field) string {
 }
 
 func ByteSliceToHexString(originalBytes []byte) string {
+	ru := []rune("")
+	for _, b := range originalBytes {
+		st := strconv.FormatInt(int64(b), 16)
+		if len(st) == 1 {
+			st = "0" + st
+		}
+		ru = append(ru, []rune(" 0x"+st)...)
+	}
+
+	return string(ru)
+}
+
+func ByteSliceToHexString1(originalBytes []byte) string {
 	result := make([]byte, 4*len(originalBytes))
 
 	buff := bytes.NewBuffer(result)
