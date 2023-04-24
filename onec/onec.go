@@ -355,28 +355,30 @@ func ReadBlockOfReplacemant(BO *BaseOnec, table Table) []uint32 {
 	fatLevel := buf[2:3][0] //fatLevel, _ :=strconv.Atoi(string(buf[2:3]))
 	lenth := binary.LittleEndian.Uint64(buf[16:25])
 	numberOfBlocks := int(math.Ceil(float64(lenth) / float64(pageSize)))
-	blocksOfReplacemant := make([]uint32, numberOfBlocks)
+	blocksOfReplacemant := make([]uint32, 0, numberOfBlocks)
 	if fatLevel == 0 {
 		for n := 0; n < numberOfBlocks; n++ {
-			blocksOfReplacemant[n] = binary.LittleEndian.Uint32(buf[24+n*4 : 25+(n+1)*4])
+			blocksOfReplacemant = append(blocksOfReplacemant, binary.LittleEndian.Uint32(buf[24+n*4:25+(n+1)*4]))
+			//blocksOfReplacemant[n] = binary.LittleEndian.Uint32(buf[24+n*4 : 25+(n+1)*4])
 		}
 	} else if fatLevel == 1 {
-		index_pages_offsets := make([]uint32, 2)
+		index_pages_offsets := make([]uint32, 0, 2) //need correct - mistake
 		for n := 0; ; n++ {
 			pages_offset := binary.LittleEndian.Uint32(buf[24+n*4 : 25+(n+1)*4])
 			if pages_offset == 0 {
 				break
 			}
-			index_pages_offsets[n] = pages_offset
+			index_pages_offsets = append(index_pages_offsets, pages_offset)
 		}
 		for n := 0; n < len(index_pages_offsets); n++ {
 			buf = ReadBytes(BO.Db, uint64(index_pages_offsets[n])*uint64(pageSize), pageSize, nil)
 			for i := 0; i < len(buf)/4; i++ {
-				block := binary.LittleEndian.Uint32(buf[n*4 : 1+(n+1)*4])
+				block := binary.LittleEndian.Uint32(buf[i*4 : i*4+4])
 				if block == 0 {
 					break
 				}
-				blocksOfReplacemant[n*int(pageSize/4)+i] = block
+				blocksOfReplacemant = append(blocksOfReplacemant, block)
+				//blocksOfReplacemant[n*int(pageSize/4)+i] = block
 			}
 		}
 	} else {
