@@ -61,7 +61,7 @@ func TestFromFormat1C(t *testing.T) {
 			DataFieldOffset: 0,
 			DataLength:      0,
 		},
-		expectedValue: "8.472300",
+		expectedValue: "8.4723",
 	}, {
 		name:  "324",
 		value: []byte{16, 0, 0, 0, 0, 0, 0, 0, 0, 50, 64},

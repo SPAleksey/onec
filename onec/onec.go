@@ -165,13 +165,16 @@ func FromFormat1C(value []byte, field Field) string {
 		}
 
 		var value16 []uint16
-		var v16 uint16
 		for n := 1; n <= int(lenth); n++ { //len(value)/2-2; n++ {
-			v16 = binary.LittleEndian.Uint16(value[n*2 : n*2+3])
-			value16 = append(value16, v16)
+			value16 = append(value16, binary.LittleEndian.Uint16(value[n*2:n*2+2]))
 		}
-		enc := utf16.Decode(value16)
-		returnValue = string(enc)
+		returnValue = string(utf16.Decode(value16))
+	case "NC":
+		var value16 []uint16
+		for n := 0; n < len(value); n++ { //len(value)/2-2; n++ {
+			value16 = append(value16, binary.LittleEndian.Uint16(value[n*2:n*2+2]))
+		}
+		returnValue = string(utf16.Decode(value16))
 	case "DT": //«DT» - дата-время. Длина поля 7 байт. Содержит данные в двоично-десятичном виде. Первые 2 байта содержат четыре цифры года, третий байт – две цифры месяца, четвертый байт – день, пятый – часы, шестой – минуты и седьмой – секунды, все также по 2 цифры.
 		d := make([]string, 0, 7)
 		var t string
@@ -193,7 +196,7 @@ func FromFormat1C(value []byte, field Field) string {
 			returnValueF = returnValueF*100 + float64(Ib) // float64(Ib/10)*10 + float64(Ib%10)
 		}
 		returnValueF = returnValueF / math.Pow10(field.Precision+1)
-		returnValue = fmt.Sprintf("%f", returnValueF)
+		returnValue = strconv.FormatFloat(returnValueF, 'f', -1, 64) //fmt.Sprintf("%f", returnValueF)
 	case "L":
 		if value[0] == 0 {
 			return "false"
@@ -422,7 +425,7 @@ func CalcFieldSize(fieldType string, length int) (int, error) {
 	case "DT":
 		returnLength = 7
 	default:
-		err = errors.New(fmt.Sprintln("Unknown field type ", fieldType))
+		err = errors.New(strings.Join([]string{"Unknown field type ", fieldType}, " "))
 	}
 	return returnLength, err
 }
@@ -437,7 +440,7 @@ func getTableDescription(s string) (Table, error) {
 	result := TableDescriptionPattern.FindStringSubmatch(s)
 
 	if len(result) == 0 {
-		return Table{}, errors.New(fmt.Sprint("The format of Table is not valid ", s))
+		return Table{}, errors.New(strings.Join([]string{"The format of Table is not valid ", s}, " "))
 	}
 
 	if result[4] == "1" {
@@ -476,7 +479,7 @@ func getTableDescription(s string) (Table, error) {
 	for _, field_str := range splitFields {
 		res := FieldDescriptionPattern.FindStringSubmatch(field_str)
 		if len(res) == 0 {
-			return Table, errors.New(fmt.Sprint("The format of Field is not valid ", field_str))
+			return Table, errors.New(strings.Join([]string{"The format of Field is not valid ", field_str}, " "))
 		}
 
 		nullExist := false
@@ -584,7 +587,7 @@ func readTablesDescriptions(BO *BaseOnec, dataPagesOffsets []uint32, blocksOfRep
 			offset := uint64(dataPagesOffsets[uint32(chunkOffset)*BlobChunkSize/pageSize])*uint64(pageSize) + uint64(uint32(chunkOffset)*BlobChunkSize%pageSize)
 			tablesDescription, err := getTableDescription(string(readBlobStream(db, uint64(offset), pageSize, dataPagesOffsets, mu)))
 			if err != nil {
-				tablesDescription = Table{Name: fmt.Sprint("offset ", offset, " page ", pageSize)}
+				tablesDescription = Table{Name: strings.Join([]string{"offset", strconv.FormatUint(offset, 10), "page", strconv.FormatUint(uint64(pageSize), 10)}, " ")}
 				fmt.Println(err)
 				//return err
 			}
