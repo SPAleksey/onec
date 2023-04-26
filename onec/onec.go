@@ -26,6 +26,7 @@ var (
 
 const RootObjectOffset uint64 = 2
 const BlobChunkSize uint32 = 256
+const BlobChunkOffset uint32 = 1
 
 type BaseOnec struct {
 	Db               *os.File
@@ -43,16 +44,17 @@ type headDB struct { //8s4bIiI
 }
 
 type Table struct {
-	Name               string
-	RecordLock         bool
-	DataOffset         int
-	BlobOffset         int
-	IndexOffset        int
-	RowLength          int
-	Fields             map[string]Field
-	FieldsName         []string
-	NoRecords          bool //0 records of this table in base
-	BlockOfReplacemant []uint32
+	Name                   string
+	RecordLock             bool
+	DataOffset             int
+	BlobOffset             int
+	IndexOffset            int
+	RowLength              int
+	Fields                 map[string]Field
+	FieldsName             []string
+	NoRecords              bool //0 records of this table in base
+	BlockOfReplacemant     []uint32
+	BlockOfReplacemantBlob []uint32
 }
 
 type Field struct {
@@ -73,6 +75,7 @@ type Object struct {
 	Number          int //o to ...
 	Deleted         bool
 	NotExist        bool
+	BlobData        []byte
 }
 
 func ReadBytesOfObject(db *os.File, BlockOfReplacemant []uint32, RowLength int, PageSize int, n int, mu *sync.Mutex) []byte {
@@ -82,13 +85,13 @@ func ReadBytesOfObject(db *os.File, BlockOfReplacemant []uint32, RowLength int, 
 	bufTableObject := make([]byte, 0, RowLength)
 
 	if offsetOfNObject/PageSize > len(BlockOfReplacemant) { //out of file
-		fmt.Println("out1 ", n)
+		//fmt.Println("out1 ", n)
 		return []byte{}
 	}
 
 	for i := 0; LefrToRead > 0; i++ {
 		if (offsetOfNObject/PageSize + i) >= len(BlockOfReplacemant) { //out of file
-			fmt.Println("out2 ", n)
+			//fmt.Println("out2 ", n)
 			return []byte{}
 		}
 		if i == 0 {
@@ -110,7 +113,7 @@ func ReadBytesOfObject(db *os.File, BlockOfReplacemant []uint32, RowLength int, 
 	return bufTableObject
 }
 
-func (BO *BaseOnec) ReadTableObject(BlockOfReplacemant []uint32, Table Table, n int) Object {
+func (BO *BaseOnec) ReadTableObject(BlockOfReplacemant []uint32, Table Table, n int, blobValue bool) Object {
 
 	if Table.NoRecords {
 		return Object{}
@@ -132,21 +135,24 @@ func (BO *BaseOnec) ReadTableObject(BlockOfReplacemant []uint32, Table Table, n 
 	}
 
 	deleted := bufTableObject[:1][0] //strconv.Atoi(string(bufTableObject[:1]))
-
 	if deleted == 1 {
 		Object.Deleted = true
 		return Object
 	}
 
+	//if Table.BlobOffset != 0 {
+	//	Object.BlobData = readBlobStream(BO.Db, uint64(Table.BlockOfReplacemantBlob[0])*uint64(BO.HeadDB.PageSize)+uint64(BlobChunkOffset*BlobChunkSize), BO.HeadDB.PageSize, Table.BlockOfReplacemantBlob, nil)
+	//}
+
 	for k, v := range Table.Fields {
 		value := bufTableObject[v.DataFieldOffset:(v.DataFieldOffset + v.DataLength)] //RepresentObject[k]
 		Object.ValueObject[k] = value
-		Object.RepresentObject[k] = FromFormat1C(value, v)
+		Object.RepresentObject[k] = FromFormat1C(value, v, &Object, BO, Table, blobValue)
 	}
 	return Object
 }
 
-func FromFormat1C(value []byte, field Field) string {
+func FromFormat1C(value []byte, field Field, object *Object, BO *BaseOnec, table Table, blobValue bool) string {
 	var returnValue string
 
 	if field.NullExist {
@@ -202,6 +208,30 @@ func FromFormat1C(value []byte, field Field) string {
 			return "false"
 		}
 		return "true"
+	case "I", "NT":
+		ChunkOffset := binary.LittleEndian.Uint32(value[:4])
+		LenthBlob := binary.LittleEndian.Uint32(value[4:])
+
+		if blobValue {
+			rv := ReadBlobStream(BO.Db, uint64(object.Table.BlockOfReplacemantBlob[uint32(ChunkOffset)*BlobChunkSize/BO.HeadDB.PageSize])*uint64(BO.HeadDB.PageSize)+uint64(ChunkOffset*BlobChunkSize%BO.HeadDB.PageSize), BO.HeadDB.PageSize, object.Table.BlockOfReplacemantBlob, nil)
+			returnValue = string(rv[:LenthBlob])
+			if len(rv) < int(LenthBlob) {
+				LenthBlob = uint32(len(rv))
+			}
+			returnValue = string(rv[:LenthBlob])
+		} else {
+			returnValue = strings.Join([]string{"/blob/", strconv.Itoa(table.BlobOffset), "/", strconv.Itoa(int(ChunkOffset)), "/", strconv.Itoa(int(LenthBlob))}, "")
+		}
+
+		/*
+			//rv := rvb[:LenthBlob]
+			var value16 []uint16
+			for n := 0; n < (len(rv)/2 - 2); n++ { //len(value)/2-2; n++ {
+				value16 = append(value16, binary.LittleEndian.Uint16(rv[n*2:n*2+2]))
+			}
+			returnValue = string(utf16.Decode(value16))
+		*/
+
 	default:
 		returnValue = ByteSliceToHexString(value)
 	}
@@ -238,6 +268,7 @@ func ByteSliceToHexString1(originalBytes []byte) string {
 }
 
 func (BO *BaseOnec) CheckBlockOfReplacemant(s string) {
+
 	if len(BO.TableDescription[s].BlockOfReplacemant) == 0 && !BO.TableDescription[s].NoRecords {
 		BlockOfReplacemant := ReadBlockOfReplacemant(BO, BO.TableDescription[s])
 		if len(BlockOfReplacemant) != 0 {
@@ -246,12 +277,22 @@ func (BO *BaseOnec) CheckBlockOfReplacemant(s string) {
 			BO.TableDescription[s] = tempT
 		}
 	}
+
+	if len(BO.TableDescription[s].BlockOfReplacemantBlob) == 0 && !BO.TableDescription[s].NoRecords && BO.TableDescription[s].BlobOffset != 0 {
+		BlockOfReplacemantBlob := ReadBlockOfReplacemantBlob(BO, BO.TableDescription[s].BlobOffset)
+		if len(BlockOfReplacemantBlob) != 0 {
+			tempT := BO.TableDescription[s]
+			tempT.BlockOfReplacemantBlob = BlockOfReplacemantBlob
+			BO.TableDescription[s] = tempT
+		}
+	}
+
 }
 
-func (BO *BaseOnec) Rows(s string, n int) Object {
+func (BO *BaseOnec) Rows(s string, n int, blobValue bool) Object {
 	BO.CheckBlockOfReplacemant(s)
 
-	return BO.ReadTableObject(BO.TableDescription[s].BlockOfReplacemant, BO.TableDescription[s], n)
+	return BO.ReadTableObject(BO.TableDescription[s].BlockOfReplacemant, BO.TableDescription[s], n, blobValue)
 	//return Rows
 }
 
@@ -295,7 +336,7 @@ func readHeadDB(db *os.File) (headDB, error) {
 	return headDB, nil
 }
 
-func readBlobStream(db *os.File, offset uint64, pageSize uint32, dataPagesOffsets []uint32, mu *sync.Mutex) []byte {
+func ReadBlobStream(db *os.File, offset uint64, pageSize uint32, dataPagesOffsets []uint32, mu *sync.Mutex) []byte {
 	nextBlock := uint32(1)
 	data := make([]byte, 0, 250)
 	currentOffset := offset
@@ -303,8 +344,18 @@ func readBlobStream(db *os.File, offset uint64, pageSize uint32, dataPagesOffset
 		b := ReadBytes(db, currentOffset, BlobChunkSize, mu)
 		nextBlock = binary.LittleEndian.Uint32(b[:4])
 		nextPage := uint32(nextBlock) * BlobChunkSize / pageSize
+
+		if int(nextPage) > len(dataPagesOffsets) { //for del
+			fmt.Println("nextPage>888 ")
+			return []byte{}
+		}
 		currentOffset = uint64(dataPagesOffsets[nextPage])*uint64(pageSize) + uint64(uint32(nextBlock)*BlobChunkSize%pageSize)
 		size := binary.LittleEndian.Uint16(b[4:6])
+		if size > 250 { //for del
+			size = uint16(len(b)) - 6
+			fmt.Println("size>250 ")
+			return []byte{}
+		}
 		data = append(data, b[6:6+size]...)
 	}
 
@@ -312,13 +363,12 @@ func readBlobStream(db *os.File, offset uint64, pageSize uint32, dataPagesOffset
 }
 
 func readBlockOfReplacemantRoot(BO *BaseOnec, blobOffsetSlice []uint32) []uint32 {
-	var blobChunkOffset uint32 = 1
 	pageSize := BO.HeadDB.PageSize
 
 	blobOffset := blobOffsetSlice[0]
 	//if blobSize == 0 {return make([]uint32, 0)}
 	//fmt.Println(int64(blobOffset)*int64(pageSize) + int64(blobChunkOffset*BlobChunkSize))
-	b := readBlobStream(BO.Db, uint64(blobOffset)*uint64(pageSize)+uint64(blobChunkOffset*BlobChunkSize), pageSize, blobOffsetSlice, nil) //ReadBytes(Db, int64(blobOffset)*int64(pageSize)+int64(blobChunkOffset*BlobChunkSize), BlobChunkSize)
+	b := ReadBlobStream(BO.Db, uint64(blobOffset)*uint64(pageSize)+uint64(BlobChunkOffset*BlobChunkSize), pageSize, blobOffsetSlice, nil) //ReadBytes(Db, int64(blobOffset)*int64(pageSize)+int64(blobChunkOffset*BlobChunkSize), BlobChunkSize)
 
 	//lang := b[:32] //Language of base, may be affects on index
 	numblocks := binary.LittleEndian.Uint32(b[32 : 32+4])
@@ -328,6 +378,67 @@ func readBlockOfReplacemantRoot(BO *BaseOnec, blobOffsetSlice []uint32) []uint32
 		blocksOfReplacemant[n] = binary.LittleEndian.Uint32(b[36+n*4 : 36+n*4+4])
 	}
 	return blocksOfReplacemant
+}
+
+func ReadBlockOfReplacemantBlob(BO *BaseOnec, BlobOffset int) []uint32 {
+
+	pageSize := BO.HeadDB.PageSize
+	offset := uint64(pageSize) * uint64(BlobOffset)
+
+	/*
+	   	struct {
+	   		unsigned int object_type; //0xFD1C или 0x01FD1C
+	   		unsigned int version1;
+	   		unsigned int version2;
+	   		unsigned int version3;
+	   		unsigned long int length; //64-разрядное целое!
+	   		unsigned int pages[];
+	   	}
+	      first 5 filed = 24 bytes
+	*/
+
+	buf := ReadBytes(BO.Db, offset, pageSize, nil)
+	//a0 := [2]byte(buf)
+	//fatLevel := [1]byte(buf[2:3])
+
+	sig := hex.EncodeToString(buf[:2])
+	if sig != "1cfd" {
+		fmt.Println("sig??? ", sig)
+	}
+	fatLevel := buf[2:3][0] //fatLevel, _ :=strconv.Atoi(string(buf[2:3]))
+	lenth := binary.LittleEndian.Uint64(buf[16:25])
+	numberOfBlocks := int(math.Ceil(float64(lenth) / float64(pageSize)))
+	blocksOfReplacemantBlob := make([]uint32, 0, numberOfBlocks)
+	if fatLevel == 0 {
+		for n := 0; n < numberOfBlocks; n++ {
+			blocksOfReplacemantBlob = append(blocksOfReplacemantBlob, binary.LittleEndian.Uint32(buf[24+n*4:24+(n+1)*4]))
+			//blocksOfReplacemant[n] = binary.LittleEndian.Uint32(buf[24+n*4 : 25+(n+1)*4])
+		}
+	} else if fatLevel == 1 {
+		index_pages_offsets := make([]uint32, 0, 2) //need correct - mistake
+		for n := 0; ; n++ {
+			pages_offset := binary.LittleEndian.Uint32(buf[24+n*4 : 25+(n+1)*4])
+			if pages_offset == 0 {
+				break
+			}
+			index_pages_offsets = append(index_pages_offsets, pages_offset)
+		}
+		for n := 0; n < len(index_pages_offsets); n++ {
+			buf = ReadBytes(BO.Db, uint64(index_pages_offsets[n])*uint64(pageSize), pageSize, nil)
+			for i := 0; i < len(buf)/4; i++ {
+				block := binary.LittleEndian.Uint32(buf[i*4 : i*4+4])
+				if block == 0 {
+					break
+				}
+				blocksOfReplacemantBlob = append(blocksOfReplacemantBlob, block)
+				//blocksOfReplacemant[n*int(pageSize/4)+i] = block
+			}
+		}
+	} else {
+		panic("unknown fatlevel")
+	}
+
+	return blocksOfReplacemantBlob
 }
 
 func ReadBlockOfReplacemant(BO *BaseOnec, table Table) []uint32 {
@@ -361,7 +472,7 @@ func ReadBlockOfReplacemant(BO *BaseOnec, table Table) []uint32 {
 	blocksOfReplacemant := make([]uint32, 0, numberOfBlocks)
 	if fatLevel == 0 {
 		for n := 0; n < numberOfBlocks; n++ {
-			blocksOfReplacemant = append(blocksOfReplacemant, binary.LittleEndian.Uint32(buf[24+n*4:25+(n+1)*4]))
+			blocksOfReplacemant = append(blocksOfReplacemant, binary.LittleEndian.Uint32(buf[24+n*4:24+(n+1)*4]))
 			//blocksOfReplacemant[n] = binary.LittleEndian.Uint32(buf[24+n*4 : 25+(n+1)*4])
 		}
 	} else if fatLevel == 1 {
@@ -388,9 +499,6 @@ func ReadBlockOfReplacemant(BO *BaseOnec, table Table) []uint32 {
 		panic("unknown fatlevel")
 	}
 
-	_ = sig
-	//fmt.Println("2 bytes ", (buf[2:3]))
-	//fmt.Println("2 bytes ", hex.EncodeToString((buf[:2])))
 	if len(blocksOfReplacemant) == 0 { //0 records in table
 		TempT := BO.TableDescription[table.Name]
 		TempT.NoRecords = true
@@ -585,7 +693,7 @@ func readTablesDescriptions(BO *BaseOnec, dataPagesOffsets []uint32, blocksOfRep
 		go func(db *os.File, chunkOffset uint32, pageSize uint32, dataPagesOffsets []uint32, tablesChan chan<- Table, wg *sync.WaitGroup) {
 			defer wg.Done()
 			offset := uint64(dataPagesOffsets[uint32(chunkOffset)*BlobChunkSize/pageSize])*uint64(pageSize) + uint64(uint32(chunkOffset)*BlobChunkSize%pageSize)
-			tablesDescription, err := getTableDescription(string(readBlobStream(db, uint64(offset), pageSize, dataPagesOffsets, mu)))
+			tablesDescription, err := getTableDescription(string(ReadBlobStream(db, uint64(offset), pageSize, dataPagesOffsets, mu)))
 			if err != nil {
 				tablesDescription = Table{Name: strings.Join([]string{"offset", strconv.FormatUint(offset, 10), "page", strconv.FormatUint(uint64(pageSize), 10)}, " ")}
 				fmt.Println(err)

@@ -1,10 +1,10 @@
 package server
 
 import (
-	"fmt"
 	"github.com/AlekseySP/onec/onec"
 	"html/template"
 	"strconv"
+	"strings"
 )
 
 type IndexTable struct {
@@ -50,6 +50,47 @@ func PageIndex() *template.Template {
 	}
 
 	return tmpl
+}
+
+type BlobData struct {
+	PageTitle string
+	BlobData  string
+}
+
+func PageBlob() *template.Template {
+
+	pageBlob := "<h1>{{.PageTitle}}</h1>\n" +
+		"<h2>{{.BlobData}}</h2>"
+	tmpl := template.New("blob")
+	tmpl, err := tmpl.Parse(pageBlob)
+	if err != nil {
+		panic("err parse blob template")
+	}
+	return tmpl
+}
+
+func PageBlobData(BO *onec.BaseOnec, blobOffsetString string, chunkOffsetString string, lenthString string) (BlobData, error) {
+
+	blobOffset, err := strconv.Atoi(blobOffsetString)
+	if err != nil {
+		return BlobData{}, err
+	}
+	chunkOffset, err := strconv.Atoi(chunkOffsetString)
+	if err != nil {
+		return BlobData{}, err
+	}
+	lenth, err := strconv.Atoi(lenthString)
+	if err != nil {
+		return BlobData{}, err
+	}
+	BlockOfReplacemantBlob := onec.ReadBlockOfReplacemantBlob(BO, blobOffset)
+	rv := onec.ReadBlobStream(BO.Db, uint64(BlockOfReplacemantBlob[uint32(chunkOffset)*onec.BlobChunkSize/BO.HeadDB.PageSize])*uint64(BO.HeadDB.PageSize)+uint64(uint32(chunkOffset)*onec.BlobChunkSize%BO.HeadDB.PageSize), BO.HeadDB.PageSize, BlockOfReplacemantBlob, nil)
+	if len(rv) < lenth {
+		lenth = len(rv)
+	}
+	returnValue := string(rv[:lenth])
+
+	return BlobData{"blob data:", returnValue}, nil
 }
 
 func PageIndexData(b *onec.BaseOnec) IndexPageData {
@@ -166,11 +207,14 @@ func PageTableDescriptionData(b *onec.BaseOnec, table string) DataTableDescripti
 }
 
 type FieldsN struct {
+	Blob       bool
+	LenthBlob  string
 	FieldsName string
 }
 
 type ValuesF struct {
-	Fields []FieldsN
+	NumberOfString string
+	Fields         []FieldsN
 }
 
 type TablePageData struct {
@@ -186,8 +230,13 @@ func PageTable() *template.Template {
 		"<table border=\"1\">\n" +
 		"  {{range .Values}}\n        " + //rows
 		"   <tr>" +
+		"       <th>{{.NumberOfString}}</th>" +
 		"      {{range .Fields}}\n        " + //columns
-		"          <th>{{.FieldsName}}</th>\n        " +
+		"          {{if .Blob}}\n            " +
+		"              <th><a href={{.FieldsName}}>blob ({{.LenthBlob}})</a></th>\n        " +
+		"          {{else}}\n            " +
+		"              <th>{{.FieldsName}}</th>\n        " +
+		"          {{end}}\n    " +
 		"      {{end}}\n" +
 		"   </tr>\n" +
 		"  {{end}}\n" +
@@ -216,15 +265,14 @@ func PageTableData(b *onec.BaseOnec, table string) TablePageData {
 	dataFieldsN := make([]FieldsN, len(b.TableDescription[table].FieldsName))
 
 	for k, v := range b.TableDescription[table].FieldsName {
-		dataFieldsN[k] = FieldsN{v}
+		dataFieldsN[k] = FieldsN{false, "", v}
 	}
-	dataValuesF = append(dataValuesF, ValuesF{dataFieldsN})
+	dataValuesF = append(dataValuesF, ValuesF{"№", dataFieldsN})
 
-	quant := 0
 	if !b.TableDescription[table].NoRecords {
 		for n := 0; n < 1000000; n++ {
 			dataFieldsN := make([]FieldsN, len(dataFieldsN))
-			obj := b.Rows(b.TableDescription[table].Name, n)
+			obj := b.Rows(b.TableDescription[table].Name, n, false)
 			if obj.NotExist {
 				break
 			}
@@ -235,13 +283,21 @@ func PageTableData(b *onec.BaseOnec, table string) TablePageData {
 				break
 			}
 			for k, v := range b.TableDescription[table].FieldsName {
-				dataFieldsN[k] = FieldsN{obj.RepresentObject[v]}
+				if b.TableDescription[table].Fields[v].FieldType == "NT" || b.TableDescription[table].Fields[v].FieldType == "I" {
+					lenthBlob := FindLenthBlobFromLink(obj.RepresentObject[v])
+					dataFieldsN[k] = FieldsN{true, lenthBlob, obj.RepresentObject[v]}
+				} else {
+					dataFieldsN[k] = FieldsN{false, "", obj.RepresentObject[v]}
+				}
 			}
-			dataValuesF = append(dataValuesF, ValuesF{dataFieldsN})
-			quant++
+			dataValuesF = append(dataValuesF, ValuesF{strconv.Itoa(n), dataFieldsN})
 		}
 	}
 	data.Values = dataValuesF
-	fmt.Println(quant)
 	return data
+}
+
+func FindLenthBlobFromLink(s string) string {
+	ss := strings.Split(s, "/")
+	return ss[len(ss)-1]
 }
