@@ -83,7 +83,7 @@ func PageBlobData(BO *onec.BaseOnec, blobOffsetString string, chunkOffsetString 
 	if err != nil {
 		return BlobData{}, err
 	}
-	BlockOfReplacemantBlob := onec.ReadBlockOfReplacemantBlob(BO, blobOffset)
+	BlockOfReplacemantBlob := onec.ReadBlockOfReplacemant(BO, blobOffset)
 	rv := onec.ReadBlobStream(BO.Db, uint64(BlockOfReplacemantBlob[uint32(chunkOffset)*onec.BlobChunkSize/BO.HeadDB.PageSize])*uint64(BO.HeadDB.PageSize)+uint64(uint32(chunkOffset)*onec.BlobChunkSize%BO.HeadDB.PageSize), BO.HeadDB.PageSize, BlockOfReplacemantBlob, nil)
 	if len(rv) < lenth {
 		lenth = len(rv)
@@ -269,30 +269,30 @@ func PageTableData(b *onec.BaseOnec, table string) TablePageData {
 	}
 	dataValuesF = append(dataValuesF, ValuesF{"№", dataFieldsN})
 
-	if !b.TableDescription[table].NoRecords {
-		for n := 0; n < 1000000; n++ {
-			dataFieldsN := make([]FieldsN, len(dataFieldsN))
-			obj := b.Rows(b.TableDescription[table].Name, n, false)
-			if obj.NotExist {
-				break
-			}
-			if obj.Deleted { //do not show deleted object (lenth 5 byte{1}deleted{4}next free object)
-				continue
-			}
-			if b.TableDescription[table].NoRecords {
-				break
-			}
-			for k, v := range b.TableDescription[table].FieldsName {
-				if b.TableDescription[table].Fields[v].FieldType == "NT" || b.TableDescription[table].Fields[v].FieldType == "I" {
-					lenthBlob := FindLenthBlobFromLink(obj.RepresentObject[v])
-					dataFieldsN[k] = FieldsN{true, lenthBlob, obj.RepresentObject[v]}
-				} else {
-					dataFieldsN[k] = FieldsN{false, "", obj.RepresentObject[v]}
-				}
-			}
-			dataValuesF = append(dataValuesF, ValuesF{strconv.Itoa(n), dataFieldsN})
+	//if len(b.TableDescription[table].BlockOfReplacemant) > 0 {
+	for n := 0; n < 1000000; n++ {
+		dataFieldsN := make([]FieldsN, len(dataFieldsN))
+		obj := b.Rows(b.TableDescription[table].Name, n, false)
+		if obj.NotExist {
+			break
 		}
+		if obj.Deleted { //do not show deleted object (lenth 5 byte{1}deleted{4}next free object)
+			continue
+		}
+		if len(b.TableDescription[table].BlockOfReplacemant) == 0 {
+			break
+		}
+		for k, v := range b.TableDescription[table].FieldsName {
+			if b.TableDescription[table].Fields[v].FieldType == "NT" || b.TableDescription[table].Fields[v].FieldType == "I" {
+				lenthBlob := FindLenthBlobFromLink(obj.RepresentObject[v])
+				dataFieldsN[k] = FieldsN{true, lenthBlob, obj.RepresentObject[v]}
+			} else {
+				dataFieldsN[k] = FieldsN{false, "", obj.RepresentObject[v]}
+			}
+		}
+		dataValuesF = append(dataValuesF, ValuesF{strconv.Itoa(n), dataFieldsN})
 	}
+	//}
 	data.Values = dataValuesF
 	return data
 }

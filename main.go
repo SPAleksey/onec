@@ -6,6 +6,7 @@ import (
 	"github.com/AlekseySP/onec/cmd"
 	"github.com/AlekseySP/onec/onec"
 	"github.com/AlekseySP/onec/server"
+	"os"
 )
 
 var flagS string
@@ -20,12 +21,18 @@ func main() {
 	flag.Parse()
 	cmd.CheckFlag(&flagS)
 
-	BaseOnec, err := onec.OpenBaseOnec(flagS)
+	db, err := os.Open(flagS)
+	if err != nil {
+		panic("File not exist?")
+		return
+	}
+	defer db.Close()
+
+	BaseOnec, err := onec.OpenBaseOnec(db)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	defer BaseOnec.Db.Close()
 
 	err = server.Start(BaseOnec, flagI)
 	if err != nil {
@@ -33,9 +40,9 @@ func main() {
 		return
 	}
 	//flagS := cmd.CheckFlag(flagS)
-	fmt.Println(flagS)
+	//fmt.Println(flagS)
 
-	return
+	//return
 	/*
 			path := "C:/GO/onec/py/tests/fixtures/Platform8Demo/8-3-8_4K.1CD"
 			//path := "C:/Del/UTDemo/KA/1Cv8.1CD"
