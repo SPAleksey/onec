@@ -148,7 +148,7 @@ func (BO *BaseOnec) ReadTableObject(BlockOfReplacemant []uint32, Table Table, n 
 	for k, v := range Table.Fields {
 		value := bufTableObject[v.DataFieldOffset:(v.DataFieldOffset + v.DataLength)] //RepresentObject[k]
 		Object.ValueObject[k] = value
-		Object.RepresentObject[k] = FromFormat1C(value, v, &Object, BO, Table, blobValue)
+		Object.RepresentObject[k] = FromFormat1C(value, v, &Object, BO, blobValue)
 	}
 	return Object
 }
@@ -162,7 +162,7 @@ func allZero(s []byte) bool {
 	return true
 }
 
-func FromFormat1C(value []byte, field Field, object *Object, BO *BaseOnec, table Table, blobValue bool) string {
+func FromFormat1C(value []byte, field Field, object *Object, BO *BaseOnec, blobValue bool) string {
 	var returnValue string
 
 	if field.NullExist {
@@ -230,7 +230,7 @@ func FromFormat1C(value []byte, field Field, object *Object, BO *BaseOnec, table
 			}
 			returnValue = string(rv[:LenthBlob])
 		} else {
-			returnValue = strings.Join([]string{"/blob/", strconv.Itoa(table.BlobOffset), "/", strconv.Itoa(int(ChunkOffset)), "/", strconv.Itoa(int(LenthBlob))}, "")
+			returnValue = strings.Join([]string{"/blob/", strconv.Itoa(object.Table.BlobOffset), "/", strconv.Itoa(int(ChunkOffset)), "/", strconv.Itoa(int(LenthBlob))}, "")
 		}
 
 		/*

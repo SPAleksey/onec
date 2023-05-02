@@ -75,12 +75,12 @@ func TestFromFormat1C(t *testing.T) {
 			DataFieldOffset: 276,
 			DataLength:      11,
 		},
-		expectedValue: "324.000000",
+		expectedValue: "324",
 	},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			Value := FromFormat1C(tc.value, tc.field)
+			Value := FromFormat1C(tc.value, tc.field, nil, nil, false)
 			if Value != tc.expectedValue {
 				t.Error(
 					"For", tc.value,
