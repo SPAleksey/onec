@@ -22,6 +22,7 @@ var Ver8380 = [4]byte{8, 3, 8, 0}
 var (
 	TableDescriptionPattern = regexp.MustCompile(`\{"(\S+)".*\n\{"Fields",\n([\s\S]*)\n\},\n\{"Indexes"(?:,|)([\s\S]*)\},\n\{"Recordlock","(\d)+"\},\n\{"Files",(\S+)\}\n\}`)
 	FieldDescriptionPattern = regexp.MustCompile(`\{"(\w+)","(\w+)",(\d+),(\d+),(\d+),"(\w+)"\}(?:,|)`)
+	HashesUsersPattern      = regexp.MustCompile(`\d+,\d+,"(\S+)","(\S+)",\d+,\d+`)
 )
 
 const RootObjectOffset uint64 = 2
@@ -75,7 +76,7 @@ type Object struct {
 	Number          int //o to ...
 	Deleted         bool
 	NotExist        bool
-	BlobData        []byte
+	//BlobData        []byte
 }
 
 func ReadBytesOfObject(db *os.File, BlockOfReplacemant []uint32, RowLength int, PageSize int, n int, mu *sync.Mutex) []byte {
@@ -246,6 +247,12 @@ func FromFormat1C(value []byte, field Field, object *Object, BO *BaseOnec, blobV
 		returnValue = ByteSliceToHexString(value)
 	}
 	return returnValue
+}
+
+func ExtractHashes(b []byte) []string {
+	result := HashesUsersPattern.FindStringSubmatch(string(b))
+
+	return result
 }
 
 func ByteSliceToHexString(originalBytes []byte) string {
@@ -600,9 +607,9 @@ func readDataPagesOffsets(BO *BaseOnec) []uint32 {
 func readTablesDescriptions(BO *BaseOnec, dataPagesOffsets []uint32, blocksOfReplacemant []uint32, mu *sync.Mutex) (map[string]Table, []string, error) {
 	//var err error
 	tablesChan := make(chan Table)
-	defer close(tablesChan)
 
 	wg := new(sync.WaitGroup)
+	wg1 := new(sync.WaitGroup)
 	pageSize := BO.HeadDB.PageSize
 	TablesDescription := make(map[string]Table)
 	TablesName := make([]string, 0, len(blocksOfReplacemant))
@@ -628,16 +635,19 @@ func readTablesDescriptions(BO *BaseOnec, dataPagesOffsets []uint32, blocksOfRep
 	}
 
 	//read from chan tableDescription
+	wg1.Add(1)
 	go func(TablesDescription map[string]Table, tablesChan <-chan Table) {
-		i := 0
+		defer wg1.Done()
 		for tableDescription := range tablesChan {
 			TablesDescription[tableDescription.Name] = tableDescription
 			TablesName = append(TablesName, tableDescription.Name)
-			i++
 		}
 	}(TablesDescription, tablesChan)
 
 	wg.Wait()
+	close(tablesChan)
+	wg1.Wait()
+
 	sort.Strings(TablesName)
 	return TablesDescription, TablesName, nil
 }
