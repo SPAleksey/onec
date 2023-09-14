@@ -72,11 +72,10 @@ func (s *server) tabledescription() http.HandlerFunc {
 	}
 }
 
-func Start(b *onec.BaseOnec, port int) error {
+func Start(b *onec.BaseOnec, port string) error {
 	router := mux.NewRouter()
 	server := NewServer(router, b)
-	//_ = server
-	return http.ListenAndServe(":80", server)
+	return http.ListenAndServe(":"+port, server)
 }
 
 func (s *server) ServeHTTP(w http.ResponseWriter, r *http.Request) {

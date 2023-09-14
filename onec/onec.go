@@ -249,10 +249,8 @@ func FromFormat1C(value []byte, field Field, object *Object, BO *BaseOnec, blobV
 	return returnValue
 }
 
-func ExtractHashes(b []byte) []string {
-	result := HashesUsersPattern.FindStringSubmatch(string(b))
-
-	return result
+func ExtractHashes(s string) []string {
+	return HashesUsersPattern.FindAllString(s, -1)
 }
 
 func ByteSliceToHexString(originalBytes []byte) string {
